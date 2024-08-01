@@ -10,101 +10,205 @@
 
 #include <NetworkHandler.h>
 #include <WakeOnLanGenerator.h>
+#include <ctime>
 #include <regex>
 #include <sstream>
 #include <ArduinoOTA.h>
-#ifdef ESP32
 #include <ESPmDNS.h>
-#elif defined(ESP8266)
-#include <ESP8266mDNS.h>
-#endif
 
-IPAddress NetworkHandler::localhost = IPADDR_ANY;
+bool NetworkHandler::ethConnected = false;
+bool NetworkHandler::ntpConnected = false;
+
 AsyncWebServer NetworkHandler::webServer(WEBSERVER_PORT);
-std::vector<std::string> NetworkHandler::deviceMacs;
+std::vector<wolDevice> NetworkHandler::wolDevices;
 IPAddress NetworkHandler::targetBroadcast = DEFAULT_TARGET_BROADCAST;
 AsyncUDP NetworkHandler::udp;
+std::string NetworkHandler::bootTime;
+
+
+bool operator< (const wolDevice &left, const wolDevice &right)
+{
+  if(left.mac < right.mac)
+    return true;
+
+  return false;
+}
+
+bool operator== (const wolDevice &left, const wolDevice &right)
+{
+  if(left.mac == right.mac)
+    return true;
+
+  return false;
+}
 
 void NetworkHandler::setup() {
-	setupWiFi();
+	setupETH();
+	setupWOLTargets();
 	setupWebServer();
 	setupOTA();
 }
 
-void NetworkHandler::setupWiFi() {
-	WiFi.mode(WIFI_STA);
-	WiFi.disconnect(1);
-	WiFi.onEvent(onWiFiEvent);
+void NetworkHandler::setupETH(){
+	WiFi.onEvent(onETHEvent);
 
-	if (!WiFi.config(localhost, GATEWAY, SUBNET)) {
-		Serial.println("Configuring WiFi failed!");
-		return;
-	}
-
-#ifdef ESP8266
-	WiFi.setHostname(HOSTNAME);
+#ifdef ETH_POWER_PIN
+    pinMode(ETH_POWER_PIN, OUTPUT);
+    digitalWrite(ETH_POWER_PIN, HIGH);
 #endif
 
-	WiFi.begin(WIFI_SSID, WIFI_PASS);
+#if CONFIG_IDF_TARGET_ESP32
+    if (!ETH.begin(ETH_TYPE, ETH_ADDR, ETH_MDC_PIN,
+                   ETH_MDIO_PIN, ETH_RESET_PIN, ETH_CLK_MODE)) {
+        Serial.println("ETH start Failed!");
+    }
+#else
+    if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
+                   SPI3_HOST,
+                   ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN)) {
+        Serial.println("ETH start Failed!");
+    }
+#endif
+
+    if (ETH.config(STATIC_IP, GATEWAY, SUBNET, DNS) == false) {
+        Serial.println("Configuration failed.");
+    }
+}
+
+void NetworkHandler::setupNTP(){
+	struct tm timeInfo;
+
+	Serial.println("Setting up NTP");
+	configTime(0, 0, NTP1, NTP2);
+	if(!getLocalTime(&timeInfo)){
+ 		Serial.println("  Failed to setup NTP");
+    	return;
+  	}
+	Serial.println("  Got the time from NTP");
+  	// Now we can set the real timezone
+  	setTimezone(timeZone);
+	ntpConnected = true;
+
+	time_t epoche;
+	time(&epoche);
+	int64_t uptime = esp_timer_get_time() / 1000000;
+	time_t boot_time_epoche = epoche - uptime;
+	struct tm * ti = localtime(&boot_time_epoche);
+	bootTime = getTime(ti);
+	Serial.print(epoche);
+	Serial.print(" sec since the Epoche. ");
+	Serial.println(getTime().c_str());		
+	Serial.print(boot_time_epoche);
+	Serial.print(" boot time Epoche. ");
+	Serial.println(getTime(ti).c_str());		
+}
+
+std::string NetworkHandler::nextWOLTime(bool startupWOLSent){
+	time_t epoche;
+	time(&epoche);
+	if(startupWOLSent){
+		epoche += WOL_INTERVAL *60;
+	}else{
+		epoche += WOL_STARTUP * 60;
+	}
+	struct tm * ti = localtime(&epoche);
+	return getTime(ti);
+}
+
+std::string NetworkHandler::getTime(tm *ti){
+  char ts[20];
+  tm timeinfo;
+  if(nullptr == ti){
+	ti = &timeinfo;
+    if(!getLocalTime(ti)){
+    	Serial.println("Failed to obtain time.");
+    	return "";
+  	}
+  }
+  strftime(ts, 20, "%F %H:%M:%S", ti);
+  return std::string(ts);
+}
+
+void NetworkHandler::setTimezone(std::string timezone){
+  	Serial.printf("  Setting Timezone to %s\n",timezone.c_str());
+  	setenv("TZ",timezone.c_str(),1);  //  Now adjust the TZ.  Clock settings are adjusted to show the new local time
+  	tzset();	
+}
+
+std::string NetworkHandler::getUptime(){
+	if(bootTime.length() > 0){
+		return bootTime;
+	}	
+	return getUptimeRel();
+}
+
+std::string NetworkHandler::getUptimeRel(){
+	int64_t uptime = esp_timer_get_time() / 1000000;
+	int16_t days = uptime / (24 *3600);
+	uptime = uptime % (24 * 3600);
+	
+	int hours = uptime / 3600;
+	uptime = uptime % 3600;
+	
+	int minutes = uptime / 60;
+	uptime = uptime % 60;
+	std::string uptimeStr("Uptime: ");
+	if(days) {
+		uptimeStr += std::to_string(days) + "days ";
+	}
+	if(hours) {
+		uptimeStr += std::to_string(hours) + "h ";
+	}
+	if(minutes) {
+		uptimeStr += std::to_string(minutes) + "m ";
+	}
+	uptimeStr += std::to_string(uptime) + "s ago";
+	return uptimeStr;
 }
 
 void NetworkHandler::loop() {
 	ArduinoOTA.handle();
 }
 
-#ifdef ESP32
-void NetworkHandler::onWiFiEvent(WiFiEvent_t event) {
-	switch (event) {
-	case SYSTEM_EVENT_STA_START:
-		WiFi.setHostname(HOSTNAME);
-		break;
-	case SYSTEM_EVENT_STA_CONNECTED:
-		Serial.println("WiFi connected.");
-		WiFi.enableIpV6();
-		break;
-	case SYSTEM_EVENT_GOT_IP6:
-		Serial.print("STA IPv6: ");
-		Serial.println(WiFi.localIPv6());
-		break;
-	case SYSTEM_EVENT_STA_GOT_IP:
-		Serial.print("STA IP: ");
-		Serial.println(localhost = WiFi.localIP());
-
-		if (DEFAULT_TARGET_BROADCAST == IPAddress((uint32_t) 0)) {
-			targetBroadcast = WiFi.broadcastIP();
-		}
-		break;
-	case SYSTEM_EVENT_STA_DISCONNECTED:
-		WiFi.reconnect();
-		break;
-	default:
-		break;
-	}
+void NetworkHandler::onETHEvent(WiFiEvent_t event)
+{
+    switch (event) {
+    case ARDUINO_EVENT_ETH_START:
+        Serial.println("ETH Started");
+        //set eth hostname here
+        ETH.setHostname(HOSTNAME);
+        break;
+    case ARDUINO_EVENT_ETH_CONNECTED:
+        Serial.println("ETH Connected");
+        break;
+    case ARDUINO_EVENT_ETH_GOT_IP:
+        Serial.print("ETH MAC: ");
+        Serial.print(ETH.macAddress());
+        Serial.print(", IPv4: ");
+        Serial.print(ETH.localIP());
+        if (ETH.fullDuplex()) {
+            Serial.print(", FULL_DUPLEX");
+        }
+        Serial.print(", ");
+        Serial.print(ETH.linkSpeed());
+        Serial.println("Mbps");
+        ethConnected = true;
+		setupNTP();
+        break;
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+        Serial.println("ETH Disconnected");
+        ethConnected = false;
+        break;
+    case ARDUINO_EVENT_ETH_STOP:
+        Serial.println("ETH Stopped");
+        ethConnected = false;
+        break;
+    default:
+        break;
+    }
 }
-#elif defined(ESP8266)
-void NetworkHandler::onWiFiEvent(WiFiEvent_t event) {
-	switch (event) {
-	case WIFI_EVENT_STAMODE_CONNECTED:
-		Serial.println("WiFi connected.");
-		break;
-	case WIFI_EVENT_STAMODE_GOT_IP:
-		Serial.print("STA IP: ");
-		Serial.println(localhost = WiFi.localIP());
 
-		if (DEFAULT_TARGET_BROADCAST == IPAddress((uint32_t) 0)) {
-			targetBroadcast = WiFi.broadcastIP();
-		}
-		break;
-	case WIFI_EVENT_STAMODE_DISCONNECTED:
-		WiFi.reconnect();
-		break;
-	default:
-		break;
-	}
-}
-#endif
-
-void NetworkHandler::setupWebServer() {
+void NetworkHandler::setupWOLTargets(){
 	std::string deviceMacs = DEVICE_MACS;
 	deviceMacs.erase(std::remove(deviceMacs.begin(), deviceMacs.end(), ' '),
 			deviceMacs.end());
@@ -112,13 +216,26 @@ void NetworkHandler::setupWebServer() {
 			deviceMacs.end());
 
 	std::istringstream deviceStream(deviceMacs);
-	std::string device;
-	while (std::getline(deviceStream, device, '\n')) {
-		if (device.length() > 0) {
-			NetworkHandler::deviceMacs.push_back(device);
+	std::string deviceStr;
+	while (std::getline(deviceStream, deviceStr, '\n')) {
+		if (deviceStr.length() > 0) {
+			
+			wolDevice device(
+							 deviceStr.substr(deviceStr.find('|') + 1, deviceStr.length()),
+							 deviceStr.substr(0,deviceStr.find('|'))
+							);
+			NetworkHandler::wolDevices.push_back(device);
+			Serial.print("Adding device: ");
+			Serial.print(device.name.c_str());
+			Serial.print(": ");
+			Serial.print(device.mac.c_str());
+			Serial.println("");
+			
 		}
 	}
+}
 
+void NetworkHandler::setupWebServer() {
 	webServer.on("/", HTTP_GET, onIndexGet);
 	webServer.on("/", HTTP_POST, onIndexPost);
 	webServer.on("/index.html", HTTP_GET, onIndexGet);
@@ -221,8 +338,10 @@ void NetworkHandler::onIndexPost(AsyncWebServerRequest *request) {
 			response = std::regex_replace(response, std::regex("\\$message_type\" hidden>\\$message"), message.c_str());
 			request->send(400, "text/html", response.c_str());
 		} else {
-			if (std::count(deviceMacs.begin(), deviceMacs.end(), std::string(device.c_str())) == 0) {
-				deviceMacs.push_back(std::string(device.c_str()));
+			std::string n("Web Add");
+			if (std::count(wolDevices.begin(), wolDevices.end(), wolDevice(device, n)) == 0) {
+				std::string n("Web Add");
+				wolDevices.push_back(wolDevice(device,n));
 			}
 
 			Serial.print("Waking up device ");
@@ -249,11 +368,13 @@ std::string NetworkHandler::prepareIndexResponse(const String device, const Stri
 	std::string response = INDEX_HTML;
 
 	std::string devices = "\n";
-	for (std::string device : deviceMacs) {
+	for (wolDevice device : wolDevices) {
 		devices += "<option value=\"";
-		devices += device;
+		devices += device.mac;
 		devices += "\">";
-		devices += device;
+		devices += device.mac;
+		devices += " ";
+		devices += device.name;
 		devices += "</option>\n";
 	}
 	response = std::regex_replace(response, std::regex("\\$devices"),
@@ -274,7 +395,7 @@ std::string NetworkHandler::prepareIndexResponse(const String device, const Stri
 		targetIPs.push_back(ip);
 	}
 	if (DEFAULT_TARGET_BROADCAST == IPAddress((uint32_t) 0)) {
-		IPAddress localBroadcast = WiFi.broadcastIP();
+		IPAddress localBroadcast = ETH.broadcastIP();
 		ip = std::string(localBroadcast.toString().c_str());
 		if (std::count(targetIPs.begin(), targetIPs.end(), ip) == 0) {
 			targetIPs.push_back(ip);
@@ -312,4 +433,19 @@ std::string NetworkHandler::prepareIndexResponse(const String device, const Stri
 	response = std::regex_replace(response, std::regex("\\$target"), target.c_str());
 
 	return response;
+}
+
+void NetworkHandler::sendWOL(){
+	for (wolDevice device : wolDevices){
+		//NetworkHandler::deviceHostnames.push_back(hostname);
+		Serial.print(device.name.c_str());
+		Serial.print(": ");
+		Serial.print(device.mac.c_str());
+		Serial.print(" ");
+		Serial.print(ETH.broadcastIP());
+		Serial.println("");
+		AsyncUDPMessage wakePacket = WakeOnLanGenerator::generateWoLPacket(device.mac);
+		udp.sendTo(wakePacket, ETH.broadcastIP(), TARGET_PORT);
+		delay(50);
+	}
 }

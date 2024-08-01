@@ -11,20 +11,36 @@
 #ifndef SRC_NETWORKHANDLER_H_
 #define SRC_NETWORKHANDLER_H_
 
+#include <Arduino.h>
+#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3,0,0)
+#include <ETHClass2.h>       //Is to use the modified ETHClass
+#define ETH  ETH2
+#else
+#include <ETH.h>
+#endif
+#include <SPI.h>
+#include <SD.h>
+#include <utilities.h>
+#include <WiFi.h>
+#include <ctime>
 #include <string>
 #include <ESPAsyncWebServer.h>
-#ifdef ESP32
 #include <AsyncUDP.h>
-#elif defined(ESP8266)
-#include <ESPAsyncUDP.h>
-#endif
 
-// Includes the content of the file "wifissid.txt" in the project root.
-// Make sure this file doesn't end with an empty line.
-extern const char WIFI_SSID[] asm("_binary_wifissid_txt_start");
-// Includes the content of the file "wifipass.txt" in the project root.
-// Make sure this file doesn't end with an empty line.
-extern const char WIFI_PASS[] asm("_binary_wifipass_txt_start");
+#define DISPLAY_INTERVAL 1 // time between display updates in sec
+#define WOL_STARTUP 1 // minutes after startup until first WOL broadcast
+#define WOL_INTERVAL 5 // minutes between WOL broadcasts after initial startup broadcast
+
+//Change to IP and DNS corresponding to your network, gateway
+static const IPAddress STATIC_IP(192, 168, 100, 12);
+static const IPAddress GATEWAY(192, 168, 100, 1);
+static const IPAddress SUBNET(255, 255, 255, 0);
+static const IPAddress DNS(192, 168, 100, 1);
+static const char HOSTNAME[] = "wol.zs.home";
+static const char NTP1[] = "192.168.100.1";
+static const char NTP2[] = "pool.ntp.org";
+static const std::string timeZone("NZST-12NZDT,M9.5.0,M4.1.0/3"); // Pacific/Auckland time zone
+
 // Includes the content of the file "otapass.txt" in the project root.
 // Make sure this file doesn't end with an empty line.
 extern const char OTA_PASS[] asm("_binary_otapass_txt_start");
@@ -38,11 +54,6 @@ extern const char INDEX_JS[] asm("_binary_src_html_index_js_start");
 extern const char MAIN_CSS[] asm("_binary_src_html_main_css_start");
 extern const char NOT_FOUND_HTML[] asm("_binary_src_html_not_found_html_start");
 
-// WiFi constants
-static const char HOSTNAME[] = "esp-wol";
-static const IPAddress GATEWAY = IPADDR_ANY;
-static const IPAddress SUBNET = IPADDR_ANY;
-
 // Web Server constants
 static const uint16_t WEBSERVER_PORT = 80;
 static const IPAddress DEFAULT_TARGET_BROADCAST = (uint) 0;// set to 0 to use the local network broadcast ip instead.
@@ -50,35 +61,57 @@ static const IPAddress DEFAULT_TARGET_BROADCAST = (uint) 0;// set to 0 to use th
 // Wake on Lan constants
 static const uint16_t TARGET_PORT = 9;
 
+// Device information
+struct wolDevice {
+	std::string mac;
+	std::string name;
+	wolDevice(std::string m, std::string n){
+		mac = m;
+		name = n;
+	}
+	wolDevice(String m, std::string n){
+		mac = m.c_str();
+		name = n;
+	}
+};
+
+bool operator< (const wolDevice &left, const wolDevice &right);
+bool operator== (const wolDevice &left, const wolDevice &right);
+
 class NetworkHandler {
 public:
 	static void setup();
-
-	static void setupWiFi();
-
+	static std::string getTime(tm *ti = nullptr);
+	static std::string getUptime();
+	static void sendWOL();
+	static std::string nextWOLTime(bool startupWOLSent);
 	static void loop();
+
 private:
 
-	// WiFi variables
-	static IPAddress localhost;
+	// ETH variables
+	static bool ethConnected;
+
+	// NTP 
+	static bool ntpConnected;
 
 	// Web Server variables
 	static AsyncWebServer webServer;
-	static std::vector<std::string> deviceMacs;
+	static std::vector<wolDevice> wolDevices;
 	static IPAddress targetBroadcast;
-
+	static std::string bootTime;
 	// Wake on Lan variables
 	static AsyncUDP udp;
 
-	static void onWiFiEvent(WiFiEvent_t event);
-
-	/**
-	 * Set up the Web Server.
-	 */
+	static void setTimezone(std::string timezone);
+	static void onETHEvent(WiFiEvent_t event);
+	static void setupETH();
+	static void setupNTP();
+	static void setupWOLTargets();
 	static void setupWebServer();
-
 	static void setupOTA();
-
+	static std::string getUptimeRel();
+	
 	static void onIndexGet(AsyncWebServerRequest *request);
 	static void onIndexPost(AsyncWebServerRequest *request);
 
