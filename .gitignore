@@ -7,12 +7,12 @@
 .pydevproject
 .settings/
 
+# VSCode
+.vscode
+
 # Others
 wifissid.txt
 wifipass.txt
 otapass.txt
 devices.txt
-.vscode/launch.json
-.vscode/c_cpp_properties.json
-.vscode/settings.json
 
