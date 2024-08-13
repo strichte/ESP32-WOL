@@ -28,8 +28,8 @@
 #include <AsyncUDP.h>
 
 #define DISPLAY_INTERVAL 1 // time between display updates in sec
-#define WOL_STARTUP 1 // minutes after startup until first WOL broadcast
-#define WOL_INTERVAL 5 // minutes between WOL broadcasts after initial startup broadcast
+#define WOL_STARTUP 60 // minutes after startup until first WOL broadcast
+#define WOL_INTERVAL 10 // minutes between WOL broadcasts after initial startup broadcast
 
 //Change to IP and DNS corresponding to your network, gateway
 static const IPAddress STATIC_IP(192, 168, 100, 12);
@@ -78,13 +78,20 @@ struct wolDevice {
 bool operator< (const wolDevice &left, const wolDevice &right);
 bool operator== (const wolDevice &left, const wolDevice &right);
 
+enum dateTimeType {
+	all,
+	date_only,
+	time_only
+};
+
 class NetworkHandler {
 public:
 	static void setup();
-	static std::string getTime(tm *ti = nullptr);
-	static std::string getUptime();
+	static std::string getTime(dateTimeType t=all, tm *ti = nullptr);
+	static std::string getUptime(dateTimeType t=all);
+	static void setNextWOLTime(tm *ti);
+	static std::string getNextWOLTime(dateTimeType t=all);
 	static void sendWOL();
-	static std::string nextWOLTime(bool startupWOLSent);
 	static void loop();
 
 private:
@@ -94,6 +101,9 @@ private:
 
 	// NTP 
 	static bool ntpConnected;
+
+	// Next WOL Time
+	static struct tm nextWOLTime;
 
 	// Web Server variables
 	static AsyncWebServer webServer;
@@ -110,7 +120,7 @@ private:
 	static void setupWOLTargets();
 	static void setupWebServer();
 	static void setupOTA();
-	static std::string getUptimeRel();
+	static std::string getUptimeRel(dateTimeType=all);
 	
 	static void onIndexGet(AsyncWebServerRequest *request);
 	static void onIndexPost(AsyncWebServerRequest *request);

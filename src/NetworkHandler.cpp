@@ -24,7 +24,7 @@ std::vector<wolDevice> NetworkHandler::wolDevices;
 IPAddress NetworkHandler::targetBroadcast = DEFAULT_TARGET_BROADCAST;
 AsyncUDP NetworkHandler::udp;
 std::string NetworkHandler::bootTime;
-
+struct tm NetworkHandler::nextWOLTime;
 
 bool operator< (const wolDevice &left, const wolDevice &right)
 {
@@ -94,28 +94,16 @@ void NetworkHandler::setupNTP(){
 	int64_t uptime = esp_timer_get_time() / 1000000;
 	time_t boot_time_epoche = epoche - uptime;
 	struct tm * ti = localtime(&boot_time_epoche);
-	bootTime = getTime(ti);
+	bootTime = getTime(all, ti);
 	Serial.print(epoche);
 	Serial.print(" sec since the Epoche. ");
 	Serial.println(getTime().c_str());		
 	Serial.print(boot_time_epoche);
 	Serial.print(" boot time Epoche. ");
-	Serial.println(getTime(ti).c_str());		
+	Serial.println(getTime(all, ti).c_str());		
 }
 
-std::string NetworkHandler::nextWOLTime(bool startupWOLSent){
-	time_t epoche;
-	time(&epoche);
-	if(startupWOLSent){
-		epoche += WOL_INTERVAL *60;
-	}else{
-		epoche += WOL_STARTUP * 60;
-	}
-	struct tm * ti = localtime(&epoche);
-	return getTime(ti);
-}
-
-std::string NetworkHandler::getTime(tm *ti){
+std::string NetworkHandler::getTime(dateTimeType t, tm *ti){
   char ts[20];
   tm timeinfo;
   if(nullptr == ti){
@@ -125,8 +113,22 @@ std::string NetworkHandler::getTime(tm *ti){
     	return "";
   	}
   }
-  strftime(ts, 20, "%F %H:%M:%S", ti);
+  switch(t){
+	case all:
+	  strftime(ts, 20, "%F %H:%M:%S", ti);
+	  break;
+	case date_only:
+	  strftime(ts, 20, "%F", ti);
+	  break;
+	case time_only:
+	  strftime(ts, 20, "%H:%M:%S", ti);
+	  break;
+  }
   return std::string(ts);
+}
+
+std::string NetworkHandler::getNextWOLTime(dateTimeType t){
+	return getTime(t,&nextWOLTime);
 }
 
 void NetworkHandler::setTimezone(std::string timezone){
@@ -135,14 +137,27 @@ void NetworkHandler::setTimezone(std::string timezone){
   	tzset();	
 }
 
-std::string NetworkHandler::getUptime(){
-	if(bootTime.length() > 0){
-		return bootTime;
-	}	
-	return getUptimeRel();
+void NetworkHandler::setNextWOLTime(tm *ti){
+	if(ti){
+		NetworkHandler::nextWOLTime = *ti;
+	}
 }
 
-std::string NetworkHandler::getUptimeRel(){
+std::string NetworkHandler::getUptime(dateTimeType type){
+	if(bootTime.length() > 0){
+		switch(type){
+			case all: 
+				return bootTime;
+			case date_only:
+				return bootTime.substr(0,10);
+			case time_only:
+				return bootTime.substr(11);
+		}
+	}	
+	return getUptimeRel(type);
+}
+
+std::string NetworkHandler::getUptimeRel(dateTimeType type){
 	int64_t uptime = esp_timer_get_time() / 1000000;
 	int16_t days = uptime / (24 *3600);
 	uptime = uptime % (24 * 3600);
@@ -152,9 +167,9 @@ std::string NetworkHandler::getUptimeRel(){
 	
 	int minutes = uptime / 60;
 	uptime = uptime % 60;
-	std::string uptimeStr("Uptime: ");
+	std::string uptimeStr;
 	if(days) {
-		uptimeStr += std::to_string(days) + "days ";
+		uptimeStr += std::to_string(days) + "d ";
 	}
 	if(hours) {
 		uptimeStr += std::to_string(hours) + "h ";
@@ -162,8 +177,14 @@ std::string NetworkHandler::getUptimeRel(){
 	if(minutes) {
 		uptimeStr += std::to_string(minutes) + "m ";
 	}
-	uptimeStr += std::to_string(uptime) + "s ago";
-	return uptimeStr;
+	uptimeStr += std::to_string(uptime) + "s";
+	switch(type){
+		case time_only:
+			return "ago";
+		case date_only:
+			return uptimeStr;
+	}
+	return uptimeStr + " ago";
 }
 
 void NetworkHandler::loop() {
@@ -198,6 +219,7 @@ void NetworkHandler::onETHEvent(WiFiEvent_t event)
     case ARDUINO_EVENT_ETH_DISCONNECTED:
         Serial.println("ETH Disconnected");
         ethConnected = false;
+		ntpConnected = false;
         break;
     case ARDUINO_EVENT_ETH_STOP:
         Serial.println("ETH Stopped");
@@ -210,8 +232,6 @@ void NetworkHandler::onETHEvent(WiFiEvent_t event)
 
 void NetworkHandler::setupWOLTargets(){
 	std::string deviceMacs = DEVICE_MACS;
-	deviceMacs.erase(std::remove(deviceMacs.begin(), deviceMacs.end(), ' '),
-			deviceMacs.end());
 	deviceMacs.erase(std::remove(deviceMacs.begin(), deviceMacs.end(), '\r'),
 			deviceMacs.end());
 
@@ -219,18 +239,15 @@ void NetworkHandler::setupWOLTargets(){
 	std::string deviceStr;
 	while (std::getline(deviceStream, deviceStr, '\n')) {
 		if (deviceStr.length() > 0) {
-			
-			wolDevice device(
-							 deviceStr.substr(deviceStr.find('|') + 1, deviceStr.length()),
-							 deviceStr.substr(0,deviceStr.find('|'))
-							);
+			std::string mac = deviceStr.substr(deviceStr.find('|') + 1, deviceStr.length());
+			mac.erase( std::remove_if( mac.begin(), mac.end(), ::isspace ), mac.end() );
+			wolDevice device(mac, deviceStr.substr(0,deviceStr.find('|')));
 			NetworkHandler::wolDevices.push_back(device);
 			Serial.print("Adding device: ");
 			Serial.print(device.name.c_str());
 			Serial.print(": ");
 			Serial.print(device.mac.c_str());
 			Serial.println("");
-			
 		}
 	}
 }
