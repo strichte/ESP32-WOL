@@ -9,56 +9,52 @@
  * https://opensource.org/licenses/MIT.
  */
 
-#include <NetworkHandler.h>
-#include <main.h>
+#include "main.h"
 
 #ifdef USE_I2C_DISPLAY
 #include <Button.h>
 #include <Display.h>
-
 #endif
 
-hw_timer_t *timerDisplay = NULL;
-hw_timer_t *timerWOLInterval = NULL;
+#include "NetworkHandler.h"
 
-volatile bool timerDisplayExpired = false;
-volatile bool timerWOLIntervalExpired = false;
-bool startupWOLSent = false;
+hw_timer_t *timer_display = NULL;
+hw_timer_t *timer_wol_interval = NULL;
+
+volatile bool timer_display_expired = false;
+volatile bool timer_wol_interval_expired = false;
+bool start_up_wol_sent = false;
 #ifdef USE_I2C_DISPLAY
-Button upButton(UP_BUTTON);
-Button downButton(DOWN_BUTTON);
-int currentPage = 0;
+Button up_button(UP_BUTTON);
+Button down_button(DOWN_BUTTON);
+int current_page = 0;
 #endif
 
-void IRAM_ATTR timerDisplayISR() { timerDisplayExpired = true; }
-
-void IRAM_ATTR timerWOLIntervalISR() { timerWOLIntervalExpired = true; }
+// Setup timers for display refresh and sending WOL packages
+void IRAM_ATTR timerDisplayISR() { timer_display_expired = true; }
+void IRAM_ATTR timerWOLIntervalISR() { timer_wol_interval_expired = true; }
 
 void setup() {
   Serial.begin(115200);
   NetworkHandler::Setup();
 
-  timerDisplay = timerBegin(0, 80, true);  // Timer 0, clock divider 80
-  timerAttachInterrupt(timerDisplay, &timerDisplayISR,
-                       true);  // Attach the interrupt handling function
-  timerAlarmWrite(timerDisplay, DISPLAY_INTERVAL * (uint64_t)1000000,
-                  true);           // Interrupt every 1 second
-  timerAlarmEnable(timerDisplay);  // Enable the alarm
+  timer_display = timerBegin(0, 80, true);
+  timerAttachInterrupt(timer_display, &timerDisplayISR, true);
+  timerAlarmWrite(timer_display, DISPLAY_INTERVAL * (uint64_t)1000000, true);
+  timerAlarmEnable(timer_display);
 
-  timerWOLInterval = timerBegin(1, 80, true);  // Timer 0, clock divider 80
-  timerAttachInterrupt(timerWOLInterval, &timerWOLIntervalISR,
-                       true);  // Attach the interrupt handling function
-  timerAlarmWrite(timerWOLInterval, WOL_STARTUP * 60 * (uint64_t)1000000,
-                  true);               // Interrupt after 60 minutes
-  timerAlarmEnable(timerWOLInterval);  // Enable the alarm
-
+  timer_wol_interval = timerBegin(1, 80, true);
+  timerAttachInterrupt(timer_wol_interval, &timerWOLIntervalISR, true);
+  timerAlarmWrite(timer_wol_interval, WOL_STARTUP * 60 * (uint64_t)1000000,
+                  true);
+  timerAlarmEnable(timer_wol_interval);
+  
 #ifdef USE_I2C_DISPLAY
-  // Display
   Wire.begin(I2C_SDA, I2C_SCL, I2C_SPEED);
   u8g2.setI2CAddress(SSD1315_ADDR);
   u8g2.begin();
-  upButton.begin();
-  downButton.begin();
+  up_button.begin();
+  down_button.begin();
 #endif
 }
 
@@ -74,7 +70,7 @@ void loop() {
     first_run = false;
   }
 
-  if (timerDisplayExpired) {
+  if (timer_display_expired) {
 #ifdef USE_I2C_DISPLAY
     u8g2.clearBuffer();                   // clear the internal memory
     u8g2.setFont(u8g2_font_siji_t_6x10);  // choose a suitable font
@@ -111,16 +107,16 @@ void loop() {
     Serial.print("\rLast Boot: ");
     Serial.print(NetworkHandler::getUptime().c_str());
 #endif
-    timerDisplayExpired = false;
+    timer_display_expired = false;
   }
 
-  if (timerWOLIntervalExpired) {
-    if (false == startupWOLSent) {
+  if (timer_wol_interval_expired) {
+    if (false == start_up_wol_sent) {
       // Reset Timer to new interval
-      timerAlarmWrite(timerWOLInterval, WOL_INTERVAL * 60 * (uint64_t)1000000,
+      timerAlarmWrite(timer_wol_interval, WOL_INTERVAL * 60 * (uint64_t)1000000,
                       true);  // Interrupt after 5 minutes
       Serial.println("Sending frist WOL after startup wait.");
-      startupWOLSent = true;
+      start_up_wol_sent = true;
     } else {
       Serial.println("Sending WOL packets");
     }
@@ -130,18 +126,17 @@ void loop() {
     Serial.print("Next WOL: ");
     Serial.println(NetworkHandler::GetNextWolTime().c_str());
     NetworkHandler::SendWol();
-    timerWOLIntervalExpired = false;
+    timer_wol_interval_expired = false;
   }
 
 #ifdef USE_I2C_DISPLAY
-  if (downButton.pressed()) {
+  if (down_button.pressed()) {
     // button is pressed
     Serial.println("Down button Pressed");
   }
-  if (upButton.pressed()) {
+  if (up_button.pressed()) {
     // button is pressed
     Serial.println("Up button Pressed");
   }
-
 #endif
 }
