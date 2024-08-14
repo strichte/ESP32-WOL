@@ -29,7 +29,7 @@ public:
 	/*
 	 * Generates a Wake on Lan packet for the given target mac address.
 	 */
-	static AsyncUDPMessage generateWoLPacket(std::string targetMac) {
+	static AsyncUDPMessage generateWoLPacket(const std::string &targetMac) {
 		return generateWoLPacket(targetMac.c_str());
 	}
 
@@ -42,7 +42,7 @@ public:
 	 * Parses the given mac address from a string to an array of 6 bytes.
 	 * Returns NULL if given an invalid mac address.
 	 */
-	static const uint8_t* parseMacAddr(const std::string mac) {
+	static const uint8_t* parseMacAddr(const std::string &mac) {
 		return parseMacAddr(mac.c_str());
 	}
 
@@ -55,7 +55,7 @@ public:
 	/*
 	 * Checks whether the given string is a valid mac address.
 	 */
-	static const bool isValidMac(const std::string mac) {
+	static const bool isValidMac(const std::string &mac) {
 		return isValidMac(mac.c_str());
 	}
 
