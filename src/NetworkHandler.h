@@ -31,9 +31,10 @@
 #endif
 
 #define DISPLAY_INTERVAL 1  // time between display updates in sec
-#define WOL_STARTUP 60      // minutes after startup until first WOL broadcast
+#define WOL_STARTUP 2       // minutes after startup until first WOL broadcast
 #define WOL_INTERVAL \
-  10  // minutes between WOL broadcasts after initial startup broadcast
+  1  // minutes between WOL broadcasts after initial
+     // startup broadcast
 
 // Change to IP and DNS corresponding to your network, gateway
 static const IPAddress kStaticIp(192, 168, 100, 12);
@@ -43,8 +44,8 @@ static const IPAddress kDnsServer(192, 168, 100, 1);
 static const char kHostname[] = "wol.zs.home";
 static const char kNtpServer1[] = "192.168.100.1";
 static const char kNtpServer2[] = "pool.ntp.org";
-static const std::string kTimeZone(
-    "NZST-12NZDT,M9.5.0,M4.1.0/3");  // Pacific/Auckland time zone
+static const char kTimeZone[] =
+    "NZST-12NZDT,M9.5.0,M4.1.0/3";  // Pacific/Auckland time zone
 
 // Includes the content of the file "otapass.txt" in the project root.
 // Make sure this file doesn't end with an empty line.
@@ -76,6 +77,12 @@ struct WolDevice {
   WolDevice(const String &m, const std::string &n) : mac(m.c_str()), name(n) {}
 };
 
+struct NextWolTime {
+  std::string str;
+  int percent;
+  NextWolTime(const std::string &s, const int &p) : str(s), percent(p) {}
+};
+
 bool operator<(const WolDevice &left, const WolDevice &right);
 bool operator==(const WolDevice &left, const WolDevice &right);
 
@@ -84,17 +91,19 @@ enum DateTimeType { all, date_only, time_only };
 class NetworkHandler {
  public:
   static void Setup();
+  static void SetNtpStatus(const bool &n) { ntp_connected_ = n; };
   static std::string GetTime(DateTimeType t = all, tm *ti = nullptr);
   static std::string GetUptime(DateTimeType t = all);
-  static void SetNextWolTime(const tm *ti);
-  static std::string GetNextWolTime(DateTimeType t = all);
+  static void SetNextWolTime(const time_t &);
+  static NextWolTime GetNextWolTime(DateTimeType t = all);
   static void SendWol();
   static void Loop();
+  static void CbSyncTime(timeval *tv);
 
  private:
   static bool eth_connected_;
   static bool ntp_connected_;
-  static struct tm next_wol_time_;
+  static time_t next_wol_time_;
 
   static AsyncWebServer web_server_;
   static std::vector<WolDevice> wol_devices_;
@@ -102,7 +111,6 @@ class NetworkHandler {
   static std::string boot_time_;
   static AsyncUDP udp_;
 
-  static void SetTimezone(const std::string &timezone);
   static void OnEthEvent(WiFiEvent_t event);
   static void SetupEth();
   static void SetupNtp();

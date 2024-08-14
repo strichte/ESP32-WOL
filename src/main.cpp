@@ -13,18 +13,17 @@
 
 #ifdef USE_I2C_DISPLAY
 #include <Button.h>
-#include <Display.h>
+#include "Display.h"
 #endif
 
 #include "esp_sntp.h"
 
 #include "NetworkHandler.h"
+#include "Timer.h"
 
-hw_timer_t *timer_display = NULL;
-hw_timer_t *timer_wol_interval = NULL;
+Timer timer_display(0, DISPLAY_INTERVAL);
+Timer timer_wol(1, WOL_STARTUP * 60);
 
-volatile bool timer_display_expired = false;
-volatile bool timer_wol_interval_expired = false;
 bool start_up_wol_sent = false;
 #ifdef USE_I2C_DISPLAY
 Button up_button(UP_BUTTON);
@@ -32,71 +31,55 @@ Button down_button(DOWN_BUTTON);
 int current_page = 0;
 #endif
 
-// Setup timers for display refresh and sending WOL packages
-void IRAM_ATTR timerDisplayISR() { timer_display_expired = true; }
-void IRAM_ATTR timerWOLIntervalISR() { timer_wol_interval_expired = true; }
-
-// Setup callback function for ntp sync notification
-void CbSyncTime(struct timeval *tv)  {
-  Serial.println("NTP time synched");
-}
-
 
 void setup() {
   Serial.begin(115200);
-  sntp_set_time_sync_notification_cb(CbSyncTime);
+
   NetworkHandler::Setup();
+  timer_display.Enable();
+  timer_wol.Enable();
 
-  timer_display = timerBegin(0, 80, true);
-  timerAttachInterrupt(timer_display, &timerDisplayISR, true);
-  timerAlarmWrite(timer_display, DISPLAY_INTERVAL * (uint64_t)1000000, true);
-  timerAlarmEnable(timer_display);
-
-  timer_wol_interval = timerBegin(1, 80, true);
-  timerAttachInterrupt(timer_wol_interval, &timerWOLIntervalISR, true);
-  timerAlarmWrite(timer_wol_interval, WOL_STARTUP * 60 * (uint64_t)1000000,
-                  true);
-  timerAlarmEnable(timer_wol_interval);
-  
 #ifdef USE_I2C_DISPLAY
   Wire.begin(I2C_SDA, I2C_SCL, I2C_SPEED);
   u8g2.setI2CAddress(SSD1315_ADDR);
   u8g2.begin();
   up_button.begin();
   down_button.begin();
-#endif
+#endif //USE_I2C_DISPLAY
 }
 
 void loop() {
   static bool first_run = true;
-  static time_t wolEpoche;
+  static time_t wol_epoche;
   NetworkHandler::Loop();
 
   if (first_run) {
-    time(&wolEpoche);
-    wolEpoche += WOL_STARTUP * 60;
-    NetworkHandler::SetNextWolTime(localtime(&wolEpoche));
+    // delay(5000);
+    time(&wol_epoche);
+    wol_epoche += WOL_STARTUP * 60;
+    // NetworkHandler::SetNextWolTime(localtime(&wol_epoche));
+    NetworkHandler::SetNextWolTime(wol_epoche);
+    Serial.print("first run wol_epoche=");
+    Serial.println(wol_epoche);
     first_run = false;
   }
 
-  if (timer_display_expired) {
+  if ( timer_display.IsExpired() ) {
 #ifdef USE_I2C_DISPLAY
     u8g2.clearBuffer();                   // clear the internal memory
     u8g2.setFont(u8g2_font_siji_t_6x10);  // choose a suitable font
     u8g2.drawGlyph(118, 8, 0xe043);       // Network
     u8g2.drawGlyph(108, 8, 0xe015);       // NTP
-    u8g2.drawBox(0, 10, 128, 4);          // progress bar
     u8g2.drawStr(0, 8,
                  ("IP: " + ETH.localIP().toString())
                      .c_str());  // write something to the internal memory
-    u8g2.drawStr(
-        0, 24,
-        std::string("Next WOL : " + NetworkHandler::GetNextWolTime(date_only))
-            .c_str());
-    u8g2.drawStr(
-        0, 32,
-        std::string("           " + NetworkHandler::GetNextWolTime(time_only))
-            .c_str());
+
+    NextWolTime next_wol_time = NetworkHandler::GetNextWolTime(date_only);
+    u8g2.drawStr(0, 24, std::string("Next WOL : " + next_wol_time.str).c_str());
+    next_wol_time = NetworkHandler::GetNextWolTime(time_only);
+    u8g2.drawStr(0, 32, std::string("           " + next_wol_time.str).c_str());
+    u8g2.drawBox(0, 10, 128 / 100.0F * timer_wol.PercentRemaining(), 4);  // progress bar
+
     u8g2.drawStr(0, 40,
                  std::string("Cur. Time: " + NetworkHandler::GetTime(date_only))
                      .c_str());
@@ -112,30 +95,31 @@ void loop() {
         std::string("           " + NetworkHandler::GetUptime(time_only))
             .c_str());
     u8g2.sendBuffer();
-#else
+#else // USE_I2C_DISPLAY
     Serial.print("\rLast Boot: ");
     Serial.print(NetworkHandler::getUptime().c_str());
-#endif
-    timer_display_expired = false;
+#endif // USE_I2C_DISPLAY
+    timer_display.Reset();
   }
 
-  if (timer_wol_interval_expired) {
+  if ( timer_wol.IsExpired() ) {
     if (false == start_up_wol_sent) {
       // Reset Timer to new interval
-      timerAlarmWrite(timer_wol_interval, WOL_INTERVAL * 60 * (uint64_t)1000000,
-                      true);  // Interrupt after 5 minutes
-      Serial.println("Sending frist WOL after startup wait.");
+      timer_wol.SetTimer(WOL_INTERVAL * 60);
+      Serial.println("Sending first WOL after startup wait.");
       start_up_wol_sent = true;
     } else {
-      Serial.println("Sending WOL packets");
+      Serial.println("Sending WOL");
     }
-    time(&wolEpoche);
-    wolEpoche += WOL_INTERVAL * 60;
-    NetworkHandler::SetNextWolTime(localtime(&wolEpoche));
+    time(&wol_epoche);
+    wol_epoche += WOL_INTERVAL * 60;
+    NetworkHandler::SetNextWolTime(wol_epoche);
+    Serial.print("Next run wol_epoche=");
+    Serial.println(wol_epoche);
     Serial.print("Next WOL: ");
-    Serial.println(NetworkHandler::GetNextWolTime().c_str());
+    Serial.println(NetworkHandler::GetNextWolTime().str.c_str());
     NetworkHandler::SendWol();
-    timer_wol_interval_expired = false;
+    timer_wol.Reset();
   }
 
 #ifdef USE_I2C_DISPLAY
@@ -146,6 +130,16 @@ void loop() {
   if (up_button.pressed()) {
     // button is pressed
     Serial.println("Up button Pressed");
+
+    time(&wol_epoche);
+    wol_epoche += WOL_INTERVAL * 60;
+    NetworkHandler::SetNextWolTime(wol_epoche);
+    Serial.print("Next run wol_epoche=");
+    Serial.println(wol_epoche);
+    Serial.print("Next WOL: ");
+    Serial.println(NetworkHandler::GetNextWolTime().str.c_str());
+    NetworkHandler::SendWol();
+    timer_wol.Reset();
   }
-#endif
+#endif // USE_I2C_DISPLAY
 }
