@@ -86,7 +86,7 @@ class NetworkHandler {
   static void Setup();
   static std::string GetTime(DateTimeType t = all, tm *ti = nullptr);
   static std::string GetUptime(DateTimeType t = all);
-  static void SetNextWolTime(tm *ti);
+  static void SetNextWolTime(const tm *ti);
   static std::string GetNextWolTime(DateTimeType t = all);
   static void SendWol();
   static void Loop();
@@ -109,7 +109,7 @@ class NetworkHandler {
   static void SetupWolTargets();
   static void SetupWebServer();
   static void SetupOta();
-  static std::string GetRelativeUptime(DateTimeType = all);
+  static std::string GetRelativeUptime(const DateTimeType &type = all);
   static void OnIndexGet(AsyncWebServerRequest *request);
   static void OnIndexPost(AsyncWebServerRequest *request);
 

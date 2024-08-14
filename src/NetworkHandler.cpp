@@ -137,7 +137,7 @@ void NetworkHandler::SetTimezone(const std::string &timezone) {
   tzset();
 }
 
-void NetworkHandler::SetNextWolTime(tm *ti) {
+void NetworkHandler::SetNextWolTime(const tm *ti) {
   if (ti) {
     NetworkHandler::next_wol_time_ = *ti;
   }
@@ -157,8 +157,9 @@ std::string NetworkHandler::GetUptime(DateTimeType type) {
   return GetRelativeUptime(type);
 }
 
-std::string NetworkHandler::GetRelativeUptime(DateTimeType type) {
+std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
   int64_t uptime = esp_timer_get_time() / 1000000;
+
   int16_t days = uptime / (24 * 3600);
   uptime = uptime % (24 * 3600);
 
@@ -167,24 +168,41 @@ std::string NetworkHandler::GetRelativeUptime(DateTimeType type) {
 
   int minutes = uptime / 60;
   uptime = uptime % 60;
-  std::string uptimeStr;
+
+  std::vector<std::string> uptime_tokens;
   if (days) {
-    uptimeStr += std::to_string(days) + "d ";
+    uptime_tokens.push_back(std::to_string(days) + "d");
   }
   if (hours) {
-    uptimeStr += std::to_string(hours) + "h ";
+    uptime_tokens.push_back(std::to_string(hours) + "h");
   }
   if (minutes) {
-    uptimeStr += std::to_string(minutes) + "m ";
+    uptime_tokens.push_back(std::to_string(minutes) + "m");
   }
-  uptimeStr += std::to_string(uptime) + "s";
+  uptime_tokens.push_back(std::to_string(uptime) + "s");
+  uptime_tokens.push_back("ago");
+  
+  std::string uptime_str("");
   switch (type) {
-    case time_only:
-      return "ago";
     case date_only:
-      return uptimeStr;
+        uptime_str += uptime_tokens[0];
+        if(uptime_tokens.size()>1){
+          uptime_str += " " + uptime_tokens[1];
+        } 
+      break;
+    case time_only:
+      if(uptime_tokens.size() >= 2){
+        for (int i=2; i!=uptime_tokens.size(); ++i) {
+          uptime_str += uptime_tokens[i] + " ";
+        }
+      }
+      break;
+    case all:
+      for (const std::string &token : uptime_tokens) {
+        uptime_str += token + " ";
+      }
   }
-  return uptimeStr + " ago";
+  return uptime_str;
 }
 
 void NetworkHandler::Loop() { ArduinoOTA.handle(); }
@@ -352,10 +370,9 @@ void NetworkHandler::OnIndexPost(AsyncWebServerRequest *request) {
           message.c_str());
       request->send(400, "text/html", response.c_str());
     } else {
-      std::string n("Web Add");
+      std::string n;
       if (std::count(wol_devices_.begin(), wol_devices_.end(),
                      WolDevice(device, n)) == 0) {
-        std::string n("Web Add");
         wol_devices_.push_back(WolDevice(device, n));
       }
 
@@ -387,13 +404,13 @@ std::string NetworkHandler::PrepareIndexResponse(const String device,
   std::string response = kIndexHtmlFile;
 
   std::string devices = "\n";
-  for (WolDevice device : wol_devices_) {
+  for (const WolDevice &wol_device : wol_devices_) {
     devices += "<option value=\"";
-    devices += device.mac;
+    devices += wol_device.mac;
     devices += "\">";
-    devices += device.mac;
+    devices += wol_device.mac;
     devices += " ";
-    devices += device.name;
+    devices += wol_device.name;
     devices += "</option>\n";
   }
   response =
@@ -402,12 +419,7 @@ std::string NetworkHandler::PrepareIndexResponse(const String device,
   std::vector<std::string> targetIPs;
   targetIPs.reserve(4);
   if (target.length() > 6) {
-#ifdef ESP8266
-    if (target == "255.255.255.255") {
-      targetIPs.push_back("(IP unset)");
-    } else
-#endif
-      targetIPs.push_back(std::string(target.c_str()));
+    targetIPs.push_back(std::string(target.c_str()));
   }
   std::string ip(target_broadcast_.toString().c_str());
   if (std::count(targetIPs.begin(), targetIPs.end(), ip) == 0) {
@@ -432,13 +444,7 @@ std::string NetworkHandler::PrepareIndexResponse(const String device,
   }
 
   std::string targets = "\n";
-  for (std::string target : targetIPs) {
-#ifdef ESP8266
-    if (target == "(IP unset)") {
-      target = "255.255.255.255";
-    }
-#endif
-
+  for (const std::string &target : targetIPs) {
     targets += "<option value=\"";
     targets += target;
     targets += "\">";
@@ -457,7 +463,7 @@ std::string NetworkHandler::PrepareIndexResponse(const String device,
 }
 
 void NetworkHandler::SendWol() {
-  for (WolDevice device : wol_devices_) {
+  for (const WolDevice &device : wol_devices_) {
     // NetworkHandler::deviceHostnames.push_back(hostname);
     Serial.print(device.name.c_str());
     Serial.print(": ");
