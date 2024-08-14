@@ -16,6 +16,8 @@
 #include <Display.h>
 #endif
 
+#include "esp_sntp.h"
+
 #include "NetworkHandler.h"
 
 hw_timer_t *timer_display = NULL;
@@ -34,8 +36,15 @@ int current_page = 0;
 void IRAM_ATTR timerDisplayISR() { timer_display_expired = true; }
 void IRAM_ATTR timerWOLIntervalISR() { timer_wol_interval_expired = true; }
 
+// Setup callback function for ntp sync notification
+void CbSyncTime(struct timeval *tv)  {
+  Serial.println("NTP time synched");
+}
+
+
 void setup() {
   Serial.begin(115200);
+  sntp_set_time_sync_notification_cb(CbSyncTime);
   NetworkHandler::Setup();
 
   timer_display = timerBegin(0, 80, true);

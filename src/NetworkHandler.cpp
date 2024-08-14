@@ -11,14 +11,14 @@
 
 #include "NetworkHandler.h"
 
-#include <ArduinoOTA.h>
-#include <ESPmDNS.h>
-#include <WakeOnLanGenerator.h>
-
 #include <ctime>
 #include <regex>
 #include <sstream>
 
+#include <ArduinoOTA.h>
+#include <ESPmDNS.h>
+#include "WakeOnLanGenerator.h"
+#include "esp_sntp.h"
 
 bool NetworkHandler::eth_connected_ = false;
 bool NetworkHandler::ntp_connected_ = false;
@@ -78,6 +78,7 @@ void NetworkHandler::SetupNtp() {
   struct tm timeInfo;
 
   Serial.println("Setting up NTP");
+  sntp_set_sync_interval(1 * 60 * 60 * 1000UL); // 1 hour
   configTime(0, 0, kNtpServer1, kNtpServer2);
   if (!getLocalTime(&timeInfo)) {
     Serial.println("  Failed to setup NTP");
@@ -107,8 +108,8 @@ std::string NetworkHandler::GetTime(DateTimeType t, tm *ti) {
   tm timeinfo;
   if (nullptr == ti) {
     ti = &timeinfo;
-    if (!getLocalTime(ti)) {
-      Serial.println("Failed to obtain time.");
+  if (!ntp_connected_ || !getLocalTime(ti)) {
+      //Serial.println("Failed to obtain time.");
       return "";
     }
   }
