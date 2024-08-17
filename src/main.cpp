@@ -13,39 +13,139 @@
 
 #ifdef USE_I2C_DISPLAY
 #include <Button.h>
-#include "Display.h"
-#endif
 
-#include "esp_sntp.h"
+#include "Display.h"
+
+#endif
 
 #include "NetworkHandler.h"
 #include "Timer.h"
+#include "esp_sntp.h"
 
-Timer timer_display(0, DISPLAY_INTERVAL);
-Timer timer_wol(1, WOL_STARTUP * 60);
+Timer timer_display(timer0, DISPLAY_INTERVAL);
+Timer timer_wol(timer1, WOL_STARTUP * 60);
 
-bool start_up_wol_sent = false;
 #ifdef USE_I2C_DISPLAY
-Button up_button(UP_BUTTON);
-Button down_button(DOWN_BUTTON);
-int current_page = 0;
+I2CDisplay display(&timer_wol);
 #endif
 
+// Testing
+File myFile;
+void printDirectory(File dir, int numTabs);
 
 void setup() {
   Serial.begin(115200);
 
   NetworkHandler::Setup();
+#ifdef USE_I2C_DISPLAY
+  display.Setup();
+  // display_pages.push_back(&I2CDisplay::UpdateStatusPage);
+#endif  // USE_I2C_DISPLAY
   timer_display.Enable();
   timer_wol.Enable();
 
-#ifdef USE_I2C_DISPLAY
-  Wire.begin(I2C_SDA, I2C_SCL, I2C_SPEED);
-  u8g2.setI2CAddress(SSD1315_ADDR);
-  u8g2.begin();
-  up_button.begin();
-  down_button.begin();
-#endif //USE_I2C_DISPLAY
+  // TESTING
+  pinMode(SD_MISO_PIN, INPUT_PULLUP);
+  SPI.begin(SD_SCLK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
+  Serial.print("\nInitializing SD card...");
+  // we'll use the initialization code from the utility libraries
+  // since we're just testing if the card is working!
+
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println("initialization failed. Things to check:");
+    Serial.println("* is a card inserted?");
+    Serial.println("* is your wiring correct?");
+    Serial.println(
+        "* did you change the chipSelect pin to match your shield or module?");
+    while (1);
+  } else {
+    Serial.println("Wiring is correct and a card is present.");
+  }
+
+  // print the type of card
+  Serial.println();
+  Serial.print("Card type:         ");
+  switch (SD.cardType()) {
+    case CARD_SD:
+      Serial.println("SD");
+      break;
+    case CARD_MMC:
+      Serial.println("MMC");
+      break;
+    case CARD_SDHC:
+      Serial.println("SDHC");
+      break;
+    case CARD_NONE:
+      Serial.println("No card attached");
+      break;
+    default:
+      Serial.println("Unknown");
+  }
+
+  // Print size of card
+  uint32_t cardSize = SD.cardSize() / (1024 * 1024);
+  String str = "SDCard Size: " + String(cardSize) + "MB";
+  Serial.println(str);
+
+  myFile = SD.open("/");
+  printDirectory(myFile, 0);
+  myFile.close();
+
+  Serial.println("");
+  // open a new file and immediately close it:
+  Serial.println("Creating helloworld.txt...");
+  myFile = SD.open("/helloworld.txt", FILE_WRITE);
+  // Check to see if the file exists:
+  if (SD.exists("/helloworld.txt")) {
+    Serial.println("helloworld.txt exists.");
+  } else {
+    Serial.println("helloworld.txt doesn't exist.");
+  }
+  // delete the file:
+  Serial.println("Removing helloworld.txt...");
+  SD.remove("/helloworld.txt");
+  if (SD.exists("/helloworld.txt")) {
+    Serial.println("helloworld.txt exists.");
+  } else {
+    Serial.println("helloworld.txt doesn't exist.");
+  }
+  myFile.close();
+  Serial.println("");
+
+  // Open a file. Note that only one file can be open at a time,
+  // so you have to close this one before opening another.
+  myFile = SD.open("/test.txt", FILE_WRITE);
+  // if the file opened okay, write to it.
+  if (myFile) {
+    Serial.print("Writing to test.txt...");
+    myFile.println("testing 1, 2, 3.");
+
+    // close the file:
+    myFile.close();
+    Serial.println("done.");
+  } else {
+    // if the file didn't open, print an error.
+    Serial.println("error opening test.txt");
+  }
+  // Re-open the file for reading.
+  myFile = SD.open("/test.txt");
+  if (myFile) {
+    Serial.println("test.txt:");
+    // Read from the file until there's nothing else in it.
+    while (myFile.available()) {
+      Serial.write(myFile.read());
+    }
+
+    // Close the file.
+    myFile.close();
+  } else {
+    // If the file didn't open, print an error.
+    Serial.println("error opening test.txt");
+  }
+  myFile.close();
+  SD.end();
+  SPI.end();
+  Serial.println("INFO: Setup complete");
 }
 
 void loop() {
@@ -54,60 +154,30 @@ void loop() {
   NetworkHandler::Loop();
 
   if (first_run) {
-    // delay(5000);
     time(&wol_epoche);
     wol_epoche += WOL_STARTUP * 60;
-    // NetworkHandler::SetNextWolTime(localtime(&wol_epoche));
     NetworkHandler::SetNextWolTime(wol_epoche);
     Serial.print("first run wol_epoche=");
     Serial.println(wol_epoche);
     first_run = false;
   }
 
-  if ( timer_display.IsExpired() ) {
+  if (timer_display.IsExpired()) {
 #ifdef USE_I2C_DISPLAY
-    u8g2.clearBuffer();                   // clear the internal memory
-    u8g2.setFont(u8g2_font_siji_t_6x10);  // choose a suitable font
-    u8g2.drawGlyph(118, 8, 0xe043);       // Network
-    u8g2.drawGlyph(108, 8, 0xe015);       // NTP
-    u8g2.drawStr(0, 8,
-                 ("IP: " + ETH.localIP().toString())
-                     .c_str());  // write something to the internal memory
-
-    NextWolTime next_wol_time = NetworkHandler::GetNextWolTime(date_only);
-    u8g2.drawStr(0, 24, std::string("Next WOL : " + next_wol_time.str).c_str());
-    next_wol_time = NetworkHandler::GetNextWolTime(time_only);
-    u8g2.drawStr(0, 32, std::string("           " + next_wol_time.str).c_str());
-    u8g2.drawBox(0, 10, 128 / 100.0F * timer_wol.PercentRemaining(), 4);  // progress bar
-
-    u8g2.drawStr(0, 40,
-                 std::string("Cur. Time: " + NetworkHandler::GetTime(date_only))
-                     .c_str());
-    u8g2.drawStr(0, 48,
-                 std::string("           " + NetworkHandler::GetTime(time_only))
-                     .c_str());
-    u8g2.drawStr(
-        0, 56,
-        std::string("Boot Time: " + NetworkHandler::GetUptime(date_only))
-            .c_str());
-    u8g2.drawStr(
-        0, 64,
-        std::string("           " + NetworkHandler::GetUptime(time_only))
-            .c_str());
-    u8g2.sendBuffer();
-#else // USE_I2C_DISPLAY
+    display.DisplayCurrentPage();
+#else   // USE_I2C_DISPLAY
     Serial.print("\rLast Boot: ");
     Serial.print(NetworkHandler::getUptime().c_str());
-#endif // USE_I2C_DISPLAY
-    timer_display.Reset();
+#endif  // USE_I2C_DISPLAY
+    timer_display.Clear();
   }
 
-  if ( timer_wol.IsExpired() ) {
-    if (false == start_up_wol_sent) {
+  if (timer_wol.IsExpired()) {
+    if (!NetworkHandler::FirstWolSent()) {
       // Reset Timer to new interval
       timer_wol.SetTimer(WOL_INTERVAL * 60);
+      timer_wol.Restart();
       Serial.println("Sending first WOL after startup wait.");
-      start_up_wol_sent = true;
     } else {
       Serial.println("Sending WOL");
     }
@@ -117,29 +187,62 @@ void loop() {
     Serial.print("Next run wol_epoche=");
     Serial.println(wol_epoche);
     Serial.print("Next WOL: ");
-    Serial.println(NetworkHandler::GetNextWolTime().str.c_str());
+    Serial.println(NetworkHandler::GetNextWolTime().c_str());
     NetworkHandler::SendWol();
-    timer_wol.Reset();
+    timer_wol.Clear();
   }
 
 #ifdef USE_I2C_DISPLAY
-  if (down_button.pressed()) {
-    // button is pressed
-    Serial.println("Down button Pressed");
-  }
-  if (up_button.pressed()) {
-    // button is pressed
-    Serial.println("Up button Pressed");
 
+  if (display.ButtonUpPressed()) {
+    Serial.println("Up button Pressed");
+    display.DisplayPreviousPage();
+  }
+  if (display.ButtonDownPressed()) {
+    Serial.println("Down button Pressed");
+    display.DisplayNextPage();
+  }
+  if (display.ButtonHashPressed()) {
+    Serial.println("# button Pressed");
+  }
+  if (display.ButtonStarPressed()) {
     time(&wol_epoche);
     wol_epoche += WOL_INTERVAL * 60;
     NetworkHandler::SetNextWolTime(wol_epoche);
     Serial.print("Next run wol_epoche=");
     Serial.println(wol_epoche);
     Serial.print("Next WOL: ");
-    Serial.println(NetworkHandler::GetNextWolTime().str.c_str());
+    Serial.println(NetworkHandler::GetNextWolTime().c_str());
+    timer_wol.Clear();
+    timer_wol.SetTimer(WOL_INTERVAL * 60);
+    timer_wol.Restart();
     NetworkHandler::SendWol();
-    timer_wol.Reset();
   }
-#endif // USE_I2C_DISPLAY
+
+#endif  // USE_I2C_DISPLAY
+}
+
+// TESTING
+// printDirectory
+void printDirectory(File dir, int numTabs) {
+  while (true) {
+    File entry = dir.openNextFile();
+    if (!entry) {
+      // no more files
+      break;
+    }
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print('\t');
+    }
+    Serial.print(entry.name());
+    if (entry.isDirectory()) {
+      Serial.println("/");
+      printDirectory(entry, numTabs + 1);
+    } else {
+      // Files have sizes, directories do not.
+      Serial.print("\t\t");
+      Serial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
 }

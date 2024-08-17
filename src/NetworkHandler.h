@@ -13,9 +13,9 @@
 #define SRC_NETWORKHANDLER_H_
 
 #include <Arduino.h>
+#include <ArduinoOTA.h>
 #include <AsyncUDP.h>
 #include <ESPAsyncWebServer.h>
-#include <SD.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <utilities.h>
@@ -77,12 +77,6 @@ struct WolDevice {
   WolDevice(const String &m, const std::string &n) : mac(m.c_str()), name(n) {}
 };
 
-struct NextWolTime {
-  std::string str;
-  int percent;
-  NextWolTime(const std::string &s, const int &p) : str(s), percent(p) {}
-};
-
 bool operator<(const WolDevice &left, const WolDevice &right);
 bool operator==(const WolDevice &left, const WolDevice &right);
 
@@ -94,13 +88,16 @@ class NetworkHandler {
   static void SetNtpStatus(const bool &n) { ntp_connected_ = n; };
   static std::string GetTime(DateTimeType t = all, tm *ti = nullptr);
   static std::string GetUptime(DateTimeType t = all);
-  static void SetNextWolTime(const time_t &);
-  static NextWolTime GetNextWolTime(DateTimeType t = all);
+  static void SetNextWolTime(const time_t &e) {NetworkHandler::next_wol_time_ = e;}
+  static std::string GetNextWolTime(DateTimeType t = all);
   static void SendWol();
-  static void Loop();
+  static const std::vector<WolDevice>& GetWolDevices() { return wol_devices_; }
+  static bool FirstWolSent() { return first_wol_sent_; }
+  static void Loop() { ArduinoOTA.handle(); };
   static void CbSyncTime(timeval *tv);
 
  private:
+  static bool first_wol_sent_;
   static bool eth_connected_;
   static bool ntp_connected_;
   static time_t next_wol_time_;
@@ -111,9 +108,9 @@ class NetworkHandler {
   static std::string boot_time_;
   static AsyncUDP udp_;
 
-  static void OnEthEvent(WiFiEvent_t event);
   static void SetupEth();
   static void SetupNtp();
+  static void OnEthEvent(WiFiEvent_t event);
   static void SetupWolTargets();
   static void SetupWebServer();
   static void SetupOta();

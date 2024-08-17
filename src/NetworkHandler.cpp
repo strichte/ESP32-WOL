@@ -11,7 +11,6 @@
 
 #include "NetworkHandler.h"
 
-#include <ArduinoOTA.h>
 #include <ESPmDNS.h>
 
 #include <ctime>
@@ -30,6 +29,7 @@ IPAddress NetworkHandler::target_broadcast_ = kDefaultBroadcastAddress;
 AsyncUDP NetworkHandler::udp_;
 std::string NetworkHandler::boot_time_;
 time_t NetworkHandler::next_wol_time_;
+bool NetworkHandler::first_wol_sent_=false;
 
 bool operator<(const WolDevice &left, const WolDevice &right) {
   if (left.mac < right.mac) return true;
@@ -48,66 +48,6 @@ void NetworkHandler::Setup() {
   SetupWolTargets();
   SetupWebServer();
   SetupOta();
-}
-
-void NetworkHandler::SetupEth() {
-  WiFi.onEvent(OnEthEvent);
-
-#ifdef ETH_POWER_PIN
-  pinMode(ETH_POWER_PIN, OUTPUT);
-  digitalWrite(ETH_POWER_PIN, HIGH);
-#endif
-
-#if CONFIG_IDF_TARGET_ESP32
-  if (!ETH.begin(ETH_TYPE, ETH_ADDR, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_RESET_PIN,
-                 ETH_CLK_MODE)) {
-    Serial.println("ETH start Failed!");
-  }
-#else
-  if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
-                 SPI3_HOST, ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN)) {
-    Serial.println("ETH start Failed!");
-  }
-#endif
-
-  if (ETH.config(kStaticIp, kGateway, kSubnet, kDnsServer) == false) {
-    Serial.println("Configuration failed.");
-  }
-}
-
-// Setup callback function for ntp sync notification
-void NetworkHandler::CbSyncTime(struct timeval *tv) {
-  NetworkHandler::SetNtpStatus(true);
-  Serial.println("NTP time synched");
-}
-
-void NetworkHandler::SetupNtp() {
-  struct tm timeInfo;
-
-  Serial.println("Setting up NTP");
-  sntp_set_time_sync_notification_cb(CbSyncTime);
-  sntp_set_sync_interval(1 * 60 * 60 * 1000UL);  // 1 hour
-  configTime(0, 0, kNtpServer1, kNtpServer2);
-  if (!getLocalTime(&timeInfo)) {
-    Serial.println("  Failed to setup NTP");
-    return;
-  }
-  setenv("TZ", kTimeZone, 1);  //  Now adjust the TZ.  Clock settings are
-                               //  adjusted to show the new local time
-  tzset();
-  Serial.printf("Set timezone to %s\n", kTimeZone);
-  time_t epoche;
-  time(&epoche);
-  int64_t uptime = esp_timer_get_time() / 1000000;
-  time_t boot_time_epoche = epoche - uptime;
-  struct tm *ti = localtime(&boot_time_epoche);
-  boot_time_ = GetTime(all, ti);
-  Serial.print(epoche);
-  Serial.print(" sec since the Epoche. ");
-  Serial.println(GetTime().c_str());
-  Serial.print(boot_time_epoche);
-  Serial.print(" boot time Epoche. ");
-  Serial.println(GetTime(all, ti).c_str());
 }
 
 std::string NetworkHandler::GetTime(DateTimeType t, tm *ti) {
@@ -134,7 +74,21 @@ std::string NetworkHandler::GetTime(DateTimeType t, tm *ti) {
   return std::string(ts);
 }
 
-NextWolTime NetworkHandler::GetNextWolTime(DateTimeType type) {
+std::string NetworkHandler::GetUptime(DateTimeType type) {
+  if (boot_time_.length() > 0) {
+    switch (type) {
+      case all:
+        return boot_time_;
+      case date_only:
+        return boot_time_.substr(0, 10);
+      case time_only:
+        return boot_time_.substr(11);
+    }
+  }
+  return GetRelativeUptime(type);
+}
+
+std::string NetworkHandler::GetNextWolTime(DateTimeType type) {
   static int16_t time_left = 0;
   if (next_wol_time_ < 100000) {
     // quick and dirty for detecting NTP not working (yet). Get relative time
@@ -143,18 +97,6 @@ NextWolTime NetworkHandler::GetNextWolTime(DateTimeType type) {
     time(&epoche);
     if (epoche < next_wol_time_) {
       time_left = next_wol_time_ - epoche;
-      int percent = time_left / (float) next_wol_time_ * 100.0F;
-      float percent_f = time_left / (float) next_wol_time_ * 100.0F; 
-      Serial.print("time_left=");
-      Serial.print(time_left);
-      Serial.print(" next_wol_time=");
-      Serial.print(next_wol_time_);
-      Serial.print(" p_c=");
-      Serial.print((int) percent_f);
-      Serial.print(" p_i=");
-      Serial.print(percent);
-      Serial.print(" p_f=");
-      Serial.println(percent_f);
       int16_t days = time_left / (24 * 3600);
       time_left = time_left % (24 * 3600);
       int hours = time_left / 3600;
@@ -195,83 +137,94 @@ NextWolTime NetworkHandler::GetNextWolTime(DateTimeType type) {
             time_left_str += token + " ";
           }
       }
-      return NextWolTime(time_left_str, percent);
+      return time_left_str;
     } else {
       // We got system time now. Set next WOL epoche correctly and continue
       // returning absolute time string
       next_wol_time_ = epoche + time_left -1;
     }
   }
-  return NextWolTime(GetTime(type, localtime(&next_wol_time_)), 20);
+  return GetTime(type, localtime(&next_wol_time_));
 }
 
-void NetworkHandler::SetNextWolTime(const time_t &e) {
-  NetworkHandler::next_wol_time_ = e;
-}
-
-std::string NetworkHandler::GetUptime(DateTimeType type) {
-  if (boot_time_.length() > 0) {
-    switch (type) {
-      case all:
-        return boot_time_;
-      case date_only:
-        return boot_time_.substr(0, 10);
-      case time_only:
-        return boot_time_.substr(11);
-    }
+void NetworkHandler::SendWol() {
+  for (const WolDevice &device : wol_devices_) {
+    // NetworkHandler::deviceHostnames.push_back(hostname);
+    Serial.print(device.name.c_str());
+    Serial.print(": ");
+    Serial.print(device.mac.c_str());
+    Serial.print(" ");
+    Serial.print(ETH.broadcastIP());
+    Serial.println("");
+    AsyncUDPMessage wakePacket =
+        WakeOnLanGenerator::generateWoLPacket(device.mac);
+    //DEBUG udp_.sendTo(wakePacket, ETH.broadcastIP(), kWolTargetPort);
+    delay(50);
   }
-  return GetRelativeUptime(type);
+  first_wol_sent_ = true;
 }
 
-std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
+// Setup callback function for ntp sync notification
+void NetworkHandler::CbSyncTime(struct timeval *tv) {
+  NetworkHandler::SetNtpStatus(true);
+  Serial.println("NTP time synched");
+}
+
+
+
+void NetworkHandler::SetupEth() {
+  WiFi.onEvent(OnEthEvent);
+
+#ifdef ETH_POWER_PIN
+  pinMode(ETH_POWER_PIN, OUTPUT);
+  digitalWrite(ETH_POWER_PIN, HIGH);
+#endif
+
+#if CONFIG_IDF_TARGET_ESP32
+  if (!ETH.begin(ETH_TYPE, ETH_ADDR, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_RESET_PIN,
+                 ETH_CLK_MODE)) {
+    Serial.println("ETH start Failed!");
+  }
+#else
+  if (!ETH.begin(ETH_PHY_W5500, 1, ETH_CS_PIN, ETH_INT_PIN, ETH_RST_PIN,
+                 SPI3_HOST, ETH_SCLK_PIN, ETH_MISO_PIN, ETH_MOSI_PIN)) {
+    Serial.println("ETH start Failed!");
+  }
+#endif
+
+  if (ETH.config(kStaticIp, kGateway, kSubnet, kDnsServer) == false) {
+    Serial.println("Configuration failed.");
+  }
+}
+
+void NetworkHandler::SetupNtp() {
+  struct tm timeInfo;
+
+  Serial.println("Setting up NTP");
+  sntp_set_time_sync_notification_cb(CbSyncTime);
+  sntp_set_sync_interval(1 * 60 * 60 * 1000UL);  // 1 hour
+  configTime(0, 0, kNtpServer1, kNtpServer2);
+  if (!getLocalTime(&timeInfo)) {
+    Serial.println("  Failed to setup NTP");
+    return;
+  }
+  setenv("TZ", kTimeZone, 1);  //  Now adjust the TZ.  Clock settings are
+                               //  adjusted to show the new local time
+  tzset();
+  Serial.printf("Set timezone to %s\n", kTimeZone);
+  time_t epoche;
+  time(&epoche);
   int64_t uptime = esp_timer_get_time() / 1000000;
-
-  int16_t days = uptime / (24 * 3600);
-  uptime = uptime % (24 * 3600);
-
-  int hours = uptime / 3600;
-  uptime = uptime % 3600;
-
-  int minutes = uptime / 60;
-  uptime = uptime % 60;
-
-  std::vector<std::string> uptime_tokens;
-  if (days) {
-    uptime_tokens.push_back(std::to_string(days) + "d");
-  }
-  if (hours) {
-    uptime_tokens.push_back(std::to_string(hours) + "h");
-  }
-  if (minutes) {
-    uptime_tokens.push_back(std::to_string(minutes) + "m");
-  }
-  uptime_tokens.push_back(std::to_string(uptime) + "s");
-  uptime_tokens.push_back("ago");
-
-  std::string uptime_str("");
-  switch (type) {
-    case date_only:
-      uptime_str += uptime_tokens[0];
-      if (uptime_tokens.size() > 1) {
-        uptime_str += " " + uptime_tokens[1];
-      }
-      break;
-    case time_only:
-      if (uptime_tokens.size() >= 2) {
-        for (int i = 2; i != uptime_tokens.size(); ++i) {
-          uptime_str += uptime_tokens[i] + " ";
-        }
-      }
-      break;
-    case all:
-      for (const std::string &token : uptime_tokens) {
-        uptime_str += token + " ";
-      }
-  }
-  return uptime_str;
+  time_t boot_time_epoche = epoche - uptime;
+  struct tm *ti = localtime(&boot_time_epoche);
+  boot_time_ = GetTime(all, ti);
+  Serial.print(epoche);
+  Serial.print(" sec since the Epoche. ");
+  Serial.println(GetTime().c_str());
+  Serial.print(boot_time_epoche);
+  Serial.print(" boot time Epoche. ");
+  Serial.println(GetTime(all, ti).c_str());
 }
-
-void NetworkHandler::Loop() { ArduinoOTA.handle(); }
 
 void NetworkHandler::OnEthEvent(WiFiEvent_t event) {
   switch (event) {
@@ -309,6 +262,7 @@ void NetworkHandler::OnEthEvent(WiFiEvent_t event) {
       break;
   }
 }
+
 
 void NetworkHandler::SetupWolTargets() {
   std::string deviceMacs = kWolDevicesFile;
@@ -383,6 +337,54 @@ void NetworkHandler::SetupOta() {
 
   ArduinoOTA.begin();
   MDNS.addService("http", "tcp", 80);
+}
+
+std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
+  int64_t uptime = esp_timer_get_time() / 1000000;
+
+  int16_t days = uptime / (24 * 3600);
+  uptime = uptime % (24 * 3600);
+
+  int hours = uptime / 3600;
+  uptime = uptime % 3600;
+
+  int minutes = uptime / 60;
+  uptime = uptime % 60;
+
+  std::vector<std::string> uptime_tokens;
+  if (days) {
+    uptime_tokens.push_back(std::to_string(days) + "d");
+  }
+  if (hours) {
+    uptime_tokens.push_back(std::to_string(hours) + "h");
+  }
+  if (minutes) {
+    uptime_tokens.push_back(std::to_string(minutes) + "m");
+  }
+  uptime_tokens.push_back(std::to_string(uptime) + "s");
+  uptime_tokens.push_back("ago");
+
+  std::string uptime_str("");
+  switch (type) {
+    case date_only:
+      uptime_str += uptime_tokens[0];
+      if (uptime_tokens.size() > 1) {
+        uptime_str += " " + uptime_tokens[1];
+      }
+      break;
+    case time_only:
+      if (uptime_tokens.size() >= 2) {
+        for (int i = 2; i != uptime_tokens.size(); ++i) {
+          uptime_str += uptime_tokens[i] + " ";
+        }
+      }
+      break;
+    case all:
+      for (const std::string &token : uptime_tokens) {
+        uptime_str += token + " ";
+      }
+  }
+  return uptime_str;
 }
 
 void NetworkHandler::OnIndexGet(AsyncWebServerRequest *request) {
@@ -525,20 +527,4 @@ std::string NetworkHandler::PrepareIndexResponse(const String device,
       std::regex_replace(response, std::regex("\\$target"), target.c_str());
 
   return response;
-}
-
-void NetworkHandler::SendWol() {
-  for (const WolDevice &device : wol_devices_) {
-    // NetworkHandler::deviceHostnames.push_back(hostname);
-    Serial.print(device.name.c_str());
-    Serial.print(": ");
-    Serial.print(device.mac.c_str());
-    Serial.print(" ");
-    Serial.print(ETH.broadcastIP());
-    Serial.println("");
-    AsyncUDPMessage wakePacket =
-        WakeOnLanGenerator::generateWoLPacket(device.mac);
-    udp_.sendTo(wakePacket, ETH.broadcastIP(), kWolTargetPort);
-    delay(50);
-  }
 }
