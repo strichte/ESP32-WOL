@@ -1,0 +1,26 @@
+devices:
+  - name: "Firewall"
+    mac: 00:1a:a4:10:14:81
+  - name: "PVE"
+    mac: "7c:2b:e1:13:da:24"
+  - name: "PVE2 BMC"
+    mac: "18:c0:4d:e3:80:c0"
+  - name: "PVE2 1"
+    mac: "18:c0:4d:e3:80:be"
+  - name: "PVE2 2"
+    mac: "18:c0:4d:e3:80:bf"
+
+network:
+  ip: 192.168.100.12
+  gateway: 192.168.100.1
+  netmask: 255.255.255.0
+  DNS: 192.168.100.1
+  NTP1: 192.168.100.1
+  NTP2: "pool.ntp.org"
+  hostname: "wol.zs.home"
+timezone: "NZST-12NZDT,M9.5.0,M4.1.0/3"
+wol:
+  startup: 1
+  repeat: 10
+  port: 9
+# ota_password: # add your OTA update password

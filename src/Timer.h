@@ -36,8 +36,8 @@ enum ESP32Timer_t {
 
 class Timer {
  public:
-  Timer(ESP32Timer_t timer, uint64_t duration)
-      : timer_num_(timer), duration_(duration) {
+  Timer(ESP32Timer_t timer)
+      : timer_num_(timer) {
     timer_ = timerBegin(timer, 80, true);
     switch (timer_num_) {
       case 0:
@@ -57,10 +57,14 @@ class Timer {
         timer3_expired = false;
         break;
     }
-    timerAlarmWrite(timer_, duration * (uint64_t)1000000, true);
   }
-  void Enable() { timerAlarmEnable(timer_); }
-  void SetTimer(uint8_t duration) {
+  void Enable(uint32_t duration) { 
+      duration_=duration;
+      timerAlarmWrite(timer_, duration_ * (uint64_t)1000000, true);
+      timerAlarmEnable(timer_); 
+  }
+
+  void SetTimer(uint32_t duration) {
     duration_ = duration;
     timerAlarmWrite(timer_, duration_ * (uint64_t)1000000, true);
   }
@@ -102,7 +106,7 @@ class Timer {
  private:
   hw_timer_t *timer_;
   uint8_t timer_num_;
-  uint64_t duration_;
+  uint32_t duration_;
 };
 
 #endif  // SRC_TIMER_H_

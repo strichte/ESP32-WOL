@@ -12,7 +12,6 @@
  *--------------------------------------------------------------
  */
 
-#ifdef USE_I2C_DISPLAY
 #include <Display.h>
 
 void I2CDisplay::Setup() {
@@ -34,32 +33,38 @@ void I2CDisplay::DrawHeader() {
                    4);  // progress bar
 }
 
+void I2CDisplay::UpdateMsgPage(const char *header, char *msg) {
+  char line_str[23];
+  display_.clearBuffer();
+  display_.drawStr(0, 8, header);
+  char *line_token;
+  int i = 0;
+  for (line_token = strtok(msg, "\n"); line_token && i < 6;
+       line_token = strtok(NULL, "\n"), i++) {
+    display_.drawStr(0, 24 + i * 8, (const char *)line_token);
+  }
+  current_page_ = status;
+  display_.sendBuffer();
+}
+
 void I2CDisplay::UpdateStatusPage() {
   display_.clearBuffer();
   DrawHeader();
   display_.drawStr(
       0, 24,
-      std::string("Next WOL : " + NetworkHandler::GetNextWolTime(date_only))
-          .c_str());
+      ("Next WOL : " + NetworkHandler::GetNextWolTime(date_only)).c_str());
   display_.drawStr(
       0, 32,
-      std::string("           " + NetworkHandler::GetNextWolTime(time_only))
-          .c_str());
+      ("           " + NetworkHandler::GetNextWolTime(time_only)).c_str());
 
   display_.drawStr(
-      0, 40,
-      std::string("Cur. Time: " + NetworkHandler::GetTime(date_only)).c_str());
+      0, 40, ("Cur. Time: " + NetworkHandler::GetTime(date_only)).c_str());
   display_.drawStr(
-      0, 48,
-      std::string("           " + NetworkHandler::GetTime(time_only)).c_str());
+      0, 48, ("           " + NetworkHandler::GetTime(time_only)).c_str());
   display_.drawStr(
-      0, 56,
-      std::string("Boot Time: " + NetworkHandler::GetUptime(date_only))
-          .c_str());
+      0, 56, ("Boot Time: " + NetworkHandler::GetUptime(date_only)).c_str());
   display_.drawStr(
-      0, 64,
-      std::string("           " + NetworkHandler::GetUptime(time_only))
-          .c_str());
+      0, 64, ("           " + NetworkHandler::GetUptime(time_only)).c_str());
   current_page_ = status;
   display_.sendBuffer();
 }
@@ -68,29 +73,20 @@ void I2CDisplay::UpdateNetworkPage() {
   display_.clearBuffer();
   DrawHeader();
 
-  display_.drawStr(
-      0, 24,
-      std::string(std::string("GW:   ") + kGateway.toString().c_str()).c_str());
-  display_.drawStr(
-      0, 32,
-      std::string(std::string("NM:   ") + kSubnet.toString().c_str()).c_str());
-  display_.drawStr(
-      0, 40,
-      std::string(std::string("DNS:  ") + kDnsServer.toString().c_str())
-          .c_str());
-  display_.drawStr(0, 48,
-                   std::string(std::string("NTP1: ") + kNtpServer1).c_str());
-  display_.drawStr(0, 56,
-                   std::string(std::string("NTP2: ") + kNtpServer2).c_str());
-  display_.drawStr(0, 64, kTimeZone);
+  display_.drawStr(0, 24, ("GW:   " + ETH.gatewayIP().toString()).c_str());
+  display_.drawStr(0, 32, ("NM:   " + ETH.subnetMask().toString()).c_str());
+  display_.drawStr(0, 40, ("DNS:  " + ETH.dnsIP().toString()).c_str());
+  display_.drawStr(0, 48, ("NTP1: " + NetworkHandler::Config().ntp1).c_str());
+  display_.drawStr(0, 56, ("NTP2: " + NetworkHandler::Config().ntp1).c_str());
+  display_.drawStr(0, 64, NetworkHandler::Config().timezone.c_str());
   current_page_ = network;
   display_.sendBuffer();
 }
 
-void I2CDisplay::UpdateDevicePage(){
-  uint size=NetworkHandler::GetWolDevices().size(),
-    start = 3 * current_device_page_,
-    end = (start + 3) > size ? size : start + 3;
+void I2CDisplay::UpdateDevicePage() {
+  uint size = NetworkHandler::GetWolDevices().size(),
+       start = 3 * current_device_page_,
+       end = (start + 3) > size ? size : start + 3;
   DrawWolDevice(start, end);
 }
 
@@ -98,9 +94,8 @@ bool I2CDisplay::PreviousWolDevicesPage() {
   bool had_previous = false;
   uint size = NetworkHandler::GetWolDevices().size();
   if (current_page_ != devices) {
-    uint num_pages = std::ceil(size/3.0F),
-      start = (num_pages - 1) * 3,
-      end = size < (num_pages * 3) ? size : num_pages * 3;
+    uint num_pages = std::ceil(size / 3.0F), start = (num_pages - 1) * 3,
+         end = size < (num_pages * 3) ? size : num_pages * 3;
     DrawWolDevice(start, end);
     current_device_page_ = num_pages - 1;
     had_previous = true;
@@ -122,7 +117,7 @@ bool I2CDisplay::NextWolDevicesPage() {
   bool had_next = false;
   uint size = NetworkHandler::GetWolDevices().size();
   if (current_page_ != devices) {
-    DrawWolDevice(0, size>3? 3 : size);
+    DrawWolDevice(0, size > 3 ? 3 : size);
     current_device_page_ = 0;
     had_next = true;
   } else {
@@ -167,7 +162,7 @@ bool I2CDisplay::DisplayPreviousPage() {
     case devices:
       if (!PreviousWolDevicesPage()) {
         UpdateStatusPage();
-        is_status_page =true;
+        is_status_page = true;
       }
       break;
   }
@@ -181,7 +176,9 @@ bool I2CDisplay::DisplayNextPage() {
       NextWolDevicesPage();
       break;
     case devices:
-      if (!NextWolDevicesPage()){UpdateNetworkPage();}
+      if (!NextWolDevicesPage()) {
+        UpdateNetworkPage();
+      }
       break;
     default:
       UpdateStatusPage();
@@ -193,15 +190,14 @@ bool I2CDisplay::DisplayNextPage() {
 void I2CDisplay::DrawWolDevice(const uint &start, const uint &end) {
   display_.clearBuffer();
   DrawHeader();
-  for (uint i=start, pos=0; i < end; i++, pos++) {
-    display_.drawStr(0, 24 + 16 * pos,
-                     std::string(NetworkHandler::GetWolDevices()[i].name + ":").c_str());
-    display_.drawStr(0, 32 + 16 * pos,
-                     std::string("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
+  for (uint i = start, pos = 0; i < end; i++, pos++) {
+    display_.drawStr(
+        0, 24 + 16 * pos,
+        std::string(NetworkHandler::GetWolDevices()[i].name + ":").c_str());
+    display_.drawStr(
+        0, 32 + 16 * pos,
+        std::string("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
   }
   display_.sendBuffer();
   current_page_ = devices;
 }
-
-#endif  // USE_I2C_DISPLAY
-

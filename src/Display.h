@@ -59,6 +59,7 @@ class I2CDisplay {
   }
   void Setup();
   void DrawHeader();
+  void UpdateMsgPage(const char* header, char *msg);
   void UpdateStatusPage();
   void UpdateNetworkPage();
   void UpdateDevicePage();
