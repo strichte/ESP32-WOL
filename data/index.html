@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>WOL Blaster</title>
+  <link rel="stylesheet" type="text/css" href="main.css">
+  <link rel="icon" type="image/png" href="wol.png">
+</head>
+
+<body>
+  <form class="main" method="post">
+    <h1>WOL Blaster</h1>
+    <fieldset>
+      <legend>Select devices to wake up</legend>
+      %DEVICES%
+    </fieldset><br>
+    <div id="message" class="message %MESSAGE_TYPE%">%MESSAGE%</div>
+    <button class="wol" type="submit">Send WOL</button>
+  </form>
+  <script  type="text/javascript">
+    setTimeout(function(){
+      const target = document.getElementById("message");
+      if(target){ 
+        target.style.opacity = '0';
+        target.addEventListener('transitionend', () => target.remove());
+      }
+    },15000);
+  </script>
+</body>
+
+</html>

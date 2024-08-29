@@ -18,56 +18,78 @@ void I2CDisplay::Setup() {
   Wire.begin(I2C_SDA, I2C_SCL, I2C_SPEED);
   display_.setI2CAddress(SSD1315_ADDR);
   display_.begin();
-  display_.setFont(u8g2_font_6x10_tr);
+  display_.setFont(u8x8_font_5x7_r);
+  ///U display_.setFont(u8g2_font_siji_t_6x10);
 }
 
 void I2CDisplay::DrawHeader() {
-  display_.drawStr(0, 8, ("IP: " + ETH.localIP().toString()).c_str());  // write something to the internal memory
+  ///U display_.drawStr(0, 8, ("IP: " + ETH.localIP().toString()).c_str());  // write something to the internal memory
+  display_.drawString(0, 0, ("IP: " + ETH.localIP().toString()).c_str());
   // display_.drawGlyph(118, 8, 0xe043);       // Network
   if (!NetworkHandler::FirstWolSent()) {
-    display_.drawGlyph(122, 8, '1');  // NTP
+    ///U display_.drawGlyph(122, 8, '1');  // NTP
+    display_.drawGlyph(15, 0, '1');  // NTP
   }
-  display_.drawBox(0, 10, 128 / 100.0F * (*timer_wol_ptr_).PercentRemaining(),
-                   4);  // progress bar
+  ///U display_.drawBox(0, 10, 128 / 100.0F * (*timer_wol_ptr_).PercentRemaining(),
+  ///U                 4);  // progress bar
 }
 
 void I2CDisplay::UpdateMsgPage(const char *header, char *msg) {
   char line_str[23];
-  display_.clearBuffer();
-  display_.drawStr(0, 8, header);
+  ///U display_.clearBuffer();
+  display_.clearDisplay();
+  ///U display_.drawStr(0, 8, header);
+  display_.drawString(0, 0, header);
   char *line_token;
   int i = 0;
   for (line_token = strtok(msg, "\n"); line_token && i < 6;
        line_token = strtok(NULL, "\n"), i++) {
-    display_.drawStr(0, 24 + i * 8, (const char *)line_token);
+    ///U display_.drawStr(0, 24 + i * 8, (const char *)line_token);
+    display_.drawString(0, 2 + i, (const char *)line_token);
   }
   current_page_ = status;
-  display_.sendBuffer();
+  ///U display_.sendBuffer();
 }
 
 void I2CDisplay::UpdateStatusPage() {
-  display_.clearBuffer();
+  ///U display_.clearBuffer();
+  display_.clearDisplay();
   DrawHeader();
-  display_.drawStr(0, 24, ("Next WOL : " + NetworkHandler::GetNextWolTime(date_only)).c_str());
-  display_.drawStr(0, 32, ("           " + NetworkHandler::GetNextWolTime(time_only)).c_str());
-  display_.drawStr(0, 40, ("Cur. Time: " + NetworkHandler::GetTime(date_only)).c_str());
-  display_.drawStr(0, 48, ("           " + NetworkHandler::GetTime(time_only)).c_str());
-  display_.drawStr(0, 56, ("Boot Time: " + NetworkHandler::GetUptime(date_only)).c_str());
-  display_.drawStr(0, 64, ("           " + NetworkHandler::GetUptime(time_only)).c_str());
+  ///U display_.drawStr(0, 24, ("Next WOL : " + NetworkHandler::GetNextWolTime(date_only)).c_str());
+  ///U display_.drawStr(0, 32, ("           " + NetworkHandler::GetNextWolTime(time_only)).c_str());
+  ///U display_.drawStr(0, 40, ("Cur. Time: " + NetworkHandler::GetTime(date_only)).c_str());
+  ///U display_.drawStr(0, 48, ("           " + NetworkHandler::GetTime(time_only)).c_str());
+  ///U display_.drawStr(0, 56, ("Boot Time: " + NetworkHandler::GetUptime(date_only)).c_str());
+  ///U display_.drawStr(0, 64, ("           " + NetworkHandler::GetUptime(time_only)).c_str());
+  display_.drawString(0, 2, ("Next WOL : " + NetworkHandler::GetNextWolTime(date_only)).c_str());
+  display_.drawString(0, 3, ("           " + NetworkHandler::GetNextWolTime(time_only)).c_str());
+  display_.drawString(0, 4, ("Cur. Time: " + NetworkHandler::GetTime(date_only)).c_str());
+  display_.drawString(0, 5, ("           " + NetworkHandler::GetTime(time_only)).c_str());
+  display_.drawString(0, 6, ("Boot Time: " + NetworkHandler::GetUptime(date_only)).c_str());
+  display_.drawString(0, 7, ("           " + NetworkHandler::GetUptime(time_only)).c_str());
   current_page_ = status;
-  display_.sendBuffer();
+  ///U display_.sendBuffer();
 }
 
 void I2CDisplay::UpdateNetworkPage() {
-  display_.clearBuffer();
+  ///U display_.clearBuffer();
+  display_.clearDisplay();
   DrawHeader();
-  display_.drawStr(0, 24, ("GW:   " + ETH.gatewayIP().toString()).c_str());
-  display_.drawStr(0, 32, ("NM:   " + ETH.subnetMask().toString()).c_str());
-  display_.drawStr(0, 40, ("DNS:  " + ETH.dnsIP().toString()).c_str());
-  display_.drawStr(0, 48, ("NTP1: " + NetworkHandler::Config().ntp1).c_str());
-  display_.drawStr(0, 56, ("NTP2: " + NetworkHandler::Config().ntp1).c_str());
-  display_.drawStr(0, 64, NetworkHandler::Config().timezone.c_str());
-  display_.sendBuffer();
+
+  ///U display_.drawStr(0, 24, ("GW:   " + ETH.gatewayIP().toString()).c_str());
+  ///U display_.drawStr(0, 32, ("NM:   " + ETH.subnetMask().toString()).c_str());
+  ///U display_.drawStr(0, 40, ("DNS:  " + ETH.dnsIP().toString()).c_str());
+  ///U display_.drawStr(0, 48, ("NTP1: " + NetworkHandler::Config().ntp1).c_str());
+  ///U display_.drawStr(0, 56, ("NTP2: " + NetworkHandler::Config().ntp1).c_str());
+  ///U display_.drawStr(0, 64, NetworkHandler::Config().timezone.c_str());
+  display_.drawString(0, 2, ("GW:   " + ETH.gatewayIP().toString()).c_str());
+  display_.drawString(0, 3, ("NM:   " + ETH.subnetMask().toString()).c_str());
+  display_.drawString(0, 4, ("DNS:  " + ETH.dnsIP().toString()).c_str());
+  display_.drawString(0, 5, ("NTP1: " + NetworkHandler::Config().ntp1).c_str());
+  display_.drawString(0, 6, ("NTP2: " + NetworkHandler::Config().ntp1).c_str());
+  display_.drawString(0, 7, NetworkHandler::Config().timezone.c_str());
+  current_page_ = network;
+  ///U display_.sendBuffer();
 }
 
 void I2CDisplay::UpdateDevicePage() {
@@ -175,12 +197,15 @@ bool I2CDisplay::DisplayNextPage() {
 }
 
 void I2CDisplay::DrawWolDevice(const uint &start, const uint &end) {
-  display_.clearBuffer();
+  ///U display_.clearBuffer();
+  display_.clearDisplay();
   DrawHeader();
   for (uint i = start, pos = 0; i < end; i++, pos++) {
-    display_.drawStr(0, 24 + 16 * pos, std::string(NetworkHandler::GetWolDevices()[i].name + ":").c_str());
-    display_.drawStr(0, 32 + 16 * pos, std::string("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
+    ///U display_.drawStr(0, 24 + 16 * pos, std::string(NetworkHandler::GetWolDevices()[i].name + ":").c_str());
+    ///U display_.drawStr(0, 32 + 16 * pos, std::string("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
+    display_.drawString(0, 2 + 2 * pos, std::string(NetworkHandler::GetWolDevices()[i].name + ":").c_str());
+    display_.drawString(0, 3 + 2 * pos, std::string("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
   }
-  display_.sendBuffer();
+  ///U display_.sendBuffer();
   current_page_ = devices;
 }

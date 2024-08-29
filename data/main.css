@@ -1,0 +1,242 @@
+/* This is the start of the common css for most of my esp projects */
+body {
+	background-color: #ffffff;
+	text-align: center;
+}
+
+.main {
+	/* --border-color: #073955 background-color: #ededed; */
+	color: #1b4275;
+	font-size: 2em;
+	/* border: 2px solid var(--border-color); */
+	/* border-radius: 10px; */
+	display: inline-block;
+	/* padding: 30px; */
+	/* margin: 5% 0; */
+	font-family: sans-serif;
+}
+
+h1 {
+	font-size: 2.2em;
+	margin: 0.3em;
+}
+
+h3,
+label,
+p {
+	margin: 0.3em 0;
+}
+
+fieldset {
+	text-align: right;
+	border: 1px solid #0356b5;
+	border-radius: 0.4em;
+}
+
+label {
+	display: block;
+	padding-left: 0.2em;
+	/* text-indent: -15px; */
+}
+
+input {
+	width: 2em;
+	height: 2em;
+	/* padding: 0; */
+	/* margin: 0; */
+	vertical-align: bottom;
+	position: relative;
+	top: -1px;
+}
+
+.message {
+	border-radius: 0.4em;
+	padding: 0.4em;
+	font-size: 1.1em;
+	transition: opacity 1s;
+	visibility: hidden;
+}
+
+.success {
+	background-color: #8fca89;
+	border: 3px solid #43683f;
+	color: #020d25;
+	visibility: visible;
+}
+
+.error {
+	background-color: #F23420;
+	border: 3px solid #791A10;
+	color: #020d25;
+	visibility: visible;
+}
+
+button {
+	--bg-color-h: 217;
+	--bg-color-s: 86%;
+	--bg-color-l: 45%;
+	--border-color: hsl(var(--bg-color-h), var(--bg-color-s), calc(var(--bg-color-l) * 2 / 3));
+	background-color: hsl(var(--bg-color-h), var(--bg-color-s), var(--bg-color-l));
+	color: #0f0f0f;
+	font-size: 0.8em;
+	border: 2px solid var(--border-color);
+	border-radius: 6px;
+	box-shadow: -1px -1px 5px var(--border-color), 6px 8px 8px #000000cd;
+	padding: 6px 3em;
+	margin: 5px;
+	margin-top: 12px;
+	transition: all .5s;
+	-webkit-transition: all .5s;
+}
+
+button:focus {
+	outline: none;
+}
+
+button:hover {
+	background-color: hsl(var(--bg-color-h), var(--bg-color-s), calc(var(--bg-color-l) * 16 / 15));
+	border-color: hsl(var(--bg-color-h), var(--bg-color-s), calc(var(--bg-color-l) * 11 / 15));
+	box-shadow: -1px -1px 5px var(--border-color), 3px 5px 6px #000000cd;
+}
+
+button:active {
+	background-color: hsl(var(--bg-color-h), var(--bg-color-s), calc(var(--bg-color-l) * 17 / 15));
+	border-color: hsl(var(--bg-color-h), var(--bg-color-s), calc(var(--bg-color-l) * 11 / 15));
+	box-shadow: none;
+}
+
+.wol {
+	--color-h: 0;
+	--color-s: 0%;
+	--color-l: 99%;
+	width: 7ch;
+	height: 7ch;
+	color: hsl(var(--color-h), var(--color-s), var(--color-l));
+	border-radius: 50%;
+	font-size: 2em;
+	vertical-align: middle;
+	padding: 5px;
+	margin-top: 0.5em;
+}
+
+.wol:hover {
+	--color-l: 95%;
+}
+
+.wol:active {
+	--color-l: 90%;
+}
+
+.input {
+	background-color: white;
+	color: black;
+	border: 2px solid black;
+	border-radius: 0;
+	margin: 6px;
+	padding: 5px 30px;
+	font-size: 1.2em;
+}
+
+a:link,
+a:visited,
+a:hover,
+a:active {
+	color: #8d9398;
+}
+
+@media (prefers-color-scheme: dark) {
+	.message {
+		color: #2d2e2f;
+	}
+
+	.wol {
+		--color-l: 15%;
+	}
+
+	.wol:hover {
+		--color-l: 17%;
+	}
+
+	.wol:active {
+		--color-l: 20%;
+	}
+
+	.input {
+		background-color: black;
+		color: white;
+		border-color: white;
+	}
+
+	a:link,
+	a:visited,
+	a:hover,
+	a:active {
+		color: #525550;
+	}
+}
+
+label {
+	margin: 10px;
+  }
+  .toggle {
+	cursor: pointer;
+	display: inline-block;
+	font-size: 25px;
+	height: 25px;
+	/* ON */
+  }
+  .toggle input[type=checkbox] {
+	display: none;
+  }
+  .toggle .text {
+	vertical-align: top;
+  }
+  .toggle span.value {
+	position: relative;
+	display: inline-block;
+	top: -1px;
+	width: 60px;
+	height: 25px;
+	box-shadow: inset 2.5px 5px 1px rgba(0, 0, 0, 0.2);
+	border-radius: 25px;
+	border: 1px solid #979797;
+	background-color: rgba(0, 0, 0, 0.1);
+	font-size: 14px;
+  }
+  .toggle span.value:before {
+	position: absolute;
+	display: block;
+	content: '';
+	width: 25px;
+	height: 25px;
+	border-radius: 25px;
+	margin: -1px;
+	transition: all 0.2s ease;
+	background-color: #e0e0e0;
+	border: 1px solid #676767;
+	box-shadow: inset 0px 2.77777778px 1px white;
+	z-index: 1;
+	left: 0px;
+  }
+  .toggle span.value:after {
+	position: absolute;
+	/* content: 'OFF'; */
+	line-height: 25px;
+	right: 6.25px;
+	color: gray;
+  }
+  .toggle input:checked ~ span.value {
+	background-color: #1da40e;
+  }
+  .toggle input:checked ~ span.value:before {
+	left: 35px;
+  }
+  .toggle input:checked ~ span.value:after {
+	content: 'WOL';
+	text-align: left;
+	color: white;
+	opacity: 0.8;
+	font-weight: bold;
+	font-size: 0.8em;
+	left: 6.25px;
+  }

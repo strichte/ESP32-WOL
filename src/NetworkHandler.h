@@ -33,14 +33,9 @@
 #endif
 
 #define DISPLAY_INTERVAL 1  // time between display updates in sec
-
-extern const char kIndexHtmlFile[];///asm("_binary_src_html_index_html_start");
-extern const char kIndexJsFile[];///asm("_binary_src_html_index_js_start");
-extern const char kCssFile[];///asm("_binary_src_html_main_css_start");
-extern const char kNotFoundHtmlFile[];///asm("_binary_src_html_not_found_html_start");
+#define WEB_SERVER_PORT 80
 
 // Web Server constants
-static const uint16_t kWebServerPort = 80;
 static const IPAddress kDefaultBroadcastAddress =
     (uint)0;  // set to 0 to use the local network broadcast ip instead.
 
@@ -53,14 +48,17 @@ struct NetworkConfig {
   IPAddress gateway;
   IPAddress subnet;
   IPAddress dns;
-  std::string ntp1;
-  std::string ntp2;
-  std::string hostname;
-  std::string timezone;
-  std::string ota_password;
+  String ntp1;
+  String ntp2;
+  String hostname;
+  String timezone;
+  String ota_password;
   uint16_t wol_startup;
   uint16_t wol_repeat;
   uint16_t wol_port;
+  bool web_enabled;
+  String web_user;
+  String web_password;
 };
 
 // Device information
@@ -87,6 +85,7 @@ class NetworkHandler {
   static void SetNextWolTime(const time_t &e) {NetworkHandler::next_wol_time_ = e;}
   static std::string GetNextWolTime(DateTimeType t = all);
   static void SendWol();
+  static void SendWol(const WolDevice &wol_device);
   static const std::vector<WolDevice>& GetWolDevices() { return wol_devices_; }
   static bool FirstWolSent() { return first_wol_sent_; }
   static void Loop() { ArduinoOTA.handle(); };
@@ -112,8 +111,9 @@ class NetworkHandler {
   static void SetupWebServer();
   static void SetupOta();
   static std::string GetRelativeUptime(const DateTimeType &type = all);
-  static void OnIndexGet(AsyncWebServerRequest *request);
-  static void OnIndexPost(AsyncWebServerRequest *request);
+  static String HTMLProcessor(const String &var);
+  //static void OnIndexGet(AsyncWebServerRequest *request);
+  //static void OnIndexPost(AsyncWebServerRequest *request);
 
   /**
    * Replaces some variables in indexHtml to prepare it for being sent to the
@@ -123,8 +123,8 @@ class NetworkHandler {
    * @param target	The currently selected target broadcast ip address.
    * @return	The prepared index.html string.
    */
-  static std::string PrepareIndexResponse(const String device,
-                                          const String target);
+  //static std::string PrepareIndexResponse(const String device,
+  //                                        const String target);
 };
 
 #endif /* SRC_NETWORKHANDLER_H_ */

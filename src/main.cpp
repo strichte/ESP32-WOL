@@ -50,8 +50,6 @@ void loop() {
     time(&wol_epoche);
     wol_epoche += NetworkHandler::Config().wol_startup * 60;
     NetworkHandler::SetNextWolTime(wol_epoche);
-    Serial.print(F("first run wol_epoche="));
-    Serial.println(wol_epoche);
     first_run = false;
   }
 
@@ -65,40 +63,27 @@ void loop() {
       // Reset Timer to new interval
       timer_wol.SetTimer(NetworkHandler::Config().wol_repeat * 60);
       timer_wol.Restart();
-      Serial.println(F("Sending first WOL after startup wait."));
-    } else {
-      Serial.println(F("Sending WOL"));
     }
     time(&wol_epoche);
     wol_epoche += NetworkHandler::Config().wol_repeat * 60;
     NetworkHandler::SetNextWolTime(wol_epoche);
-    Serial.print(F("Next run wol_epoche="));
-    Serial.println(wol_epoche);
-    Serial.print(F("Next WOL: "));
-    Serial.println(NetworkHandler::GetNextWolTime().c_str());
     NetworkHandler::SendWol();
     timer_wol.Clear();
   }
 
   if (display.ButtonUpPressed()) {
-    Serial.println(F("Up button Pressed"));
     display.DisplayPreviousPage();
   }
   if (display.ButtonDownPressed()) {
-    Serial.println(F("Down button Pressed"));
     display.DisplayNextPage();
   }
   if (display.ButtonHashPressed()) {
-    Serial.println(F("# button Pressed"));
   }
+
   if (display.ButtonStarPressed()) {
     time(&wol_epoche);
     wol_epoche += NetworkHandler::Config().wol_repeat * 60;
     NetworkHandler::SetNextWolTime(wol_epoche);
-    Serial.print(F("Next run wol_epoche="));
-    Serial.println(wol_epoche);
-    Serial.print(F("Next WOL: "));
-    Serial.println(NetworkHandler::GetNextWolTime().c_str());
     timer_wol.Clear();
     timer_wol.SetTimer(NetworkHandler::Config().wol_repeat * 60);
     timer_wol.Restart();

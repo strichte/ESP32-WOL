@@ -28,7 +28,7 @@ extern I2CDisplay display;
 bool NetworkHandler::eth_connected_ = false;
 bool NetworkHandler::ntp_connected_ = false;
 
-AsyncWebServer NetworkHandler::web_server_(kWebServerPort);
+AsyncWebServer NetworkHandler::web_server_(WEB_SERVER_PORT);
 std::vector<WolDevice> NetworkHandler::wol_devices_;
 IPAddress NetworkHandler::target_broadcast_ = kDefaultBroadcastAddress;
 AsyncUDP NetworkHandler::udp_;
@@ -36,13 +36,6 @@ std::string NetworkHandler::boot_time_;
 time_t NetworkHandler::next_wol_time_;
 bool NetworkHandler::first_wol_sent_ = false;
 NetworkConfig NetworkHandler::config_;
-
-extern const char kIndexHtmlFile[] =
-    "";  /// asm("_binary_src_html_index_html_start");
-extern const char kIndexJsFile[] =
-    "";                             /// asm("_binary_src_html_index_js_start");
-extern const char kCssFile[] = "";  /// asm("_binary_src_html_main_css_start");
-extern const char kNotFoundHtmlFile[] = "";
 
 bool operator<(const WolDevice &left, const WolDevice &right) {
   if (left.mac < right.mac) return true;
@@ -149,10 +142,10 @@ bool NetworkHandler::Setup(const char *config_file) {
     return false;
   }
 
-  if ("ota_password" != yaml_config.gettext("ota_password")) {
-    config_.ota_password = yaml_config.gettext("ota_password");
+  if ("ota_password_hash" != yaml_config.gettext("ota_password_hash")) {
+    config_.ota_password = yaml_config.gettext("ota_password_hash");
   } else {
-    char msg[] = "No ota_password in\nYAML config.";
+    char msg[] = "No ota_password_hash\nin YAML config.";
     display.UpdateMsgPage("Error:", msg);
     return false;
   }
@@ -181,6 +174,34 @@ bool NetworkHandler::Setup(const char *config_file) {
     return false;
   }
 
+  if ("web:enabled" != yaml_config.gettext("web:enabled")) {
+    std::stringstream s(yaml_config.gettext("web:enabled"));
+    if (!(s >> std::boolalpha >> config_.web_enabled)) {
+      config_.web_enabled = false;
+    }
+    Serial.print("Conf web:enabled 2=");
+    Serial.println(config_.web_enabled);
+    if (config_.web_enabled) {
+      if ("web:user" != yaml_config.gettext("web:user")) {
+        config_.web_user = yaml_config.gettext("web:user");
+      } else {
+        char msg[] = "No web:user in\nYAML config.";
+        display.UpdateMsgPage("Error:", msg);
+        return false;
+      }
+      if ("web:password" != yaml_config.gettext("web:password")) {
+        config_.web_password = yaml_config.gettext("web:password");
+      } else {
+        char msg[] = "No web:password\nin YAML config.";
+        display.UpdateMsgPage("Error:", msg);
+        return false;
+      }
+    }
+  } else {
+    char msg[] = "No web:enabled in\nYAML config.";
+    display.UpdateMsgPage("Error:", msg);
+    return false;
+  }
 
   bool wol_success = false;
   bool last_element = false;
@@ -201,16 +222,10 @@ bool NetworkHandler::Setup(const char *config_file) {
     } else {
       wol_success = true;
       wol_devices_.push_back(device);
-      /* Serial.print("Adding device: ");
-        Serial.print(device.name.c_str());
-        Serial.print(": ");
-        Serial.print(device.mac.c_str());
-        Serial.println("");
-        */
     }
   }
-  SD.end();
-  SPI.end();
+  // SD.end();
+  // SPI.end();
 
   if (!wol_success) {
     char msg[] = "No target devices\nconfigured in\n YAML config.'.";
@@ -218,11 +233,11 @@ bool NetworkHandler::Setup(const char *config_file) {
     return false;
   }
 
-  // SO far so good, setup network
+  // So far so good, setup network
   if (!SetupEth()) {
     return false;
   }
-  /// SetupWebServer();
+  SetupWebServer();
   SetupOta();
   return true;
 }
@@ -324,18 +339,21 @@ std::string NetworkHandler::GetNextWolTime(DateTimeType type) {
   return GetTime(type, localtime(&next_wol_time_));
 }
 
+void NetworkHandler::SendWol(const WolDevice &device) {
+  AsyncUDPMessage wakePacket =
+      WakeOnLanGenerator::generateWoLPacket(device.mac);
+  udp_.sendTo(wakePacket, ETH.broadcastIP(), config_.wol_port);
+  Serial.print("Sent WOL to ");
+  Serial.println(device.mac.c_str());
+}
+
 void NetworkHandler::SendWol() {
   for (const WolDevice &device : wol_devices_) {
-    // NetworkHandler::deviceHostnames.push_back(hostname);
-    Serial.print(device.name.c_str());
-    Serial.print(": ");
-    Serial.print(device.mac.c_str());
-    Serial.print(" ");
-    Serial.print(ETH.broadcastIP());
-    Serial.println("");
+    Serial.print("Sent WOL to: ");
+    Serial.println(device.mac.c_str());
     AsyncUDPMessage wakePacket =
         WakeOnLanGenerator::generateWoLPacket(device.mac);
-    /// DEBUG udp_.sendTo(wakePacket, ETH.broadcastIP(), config_.wol_port);
+    udp_.sendTo(wakePacket, ETH.broadcastIP(), config_.wol_port);
     delay(50);
   }
   first_wol_sent_ = true;
@@ -371,7 +389,7 @@ bool NetworkHandler::SetupNtp() {
   sntp_set_time_sync_notification_cb(CbSyncTime);
   sntp_set_sync_interval(1 * 60 * 60 * 1000UL);  // 1 hour
 
-  if ("" != config_.ntp2) {
+  if (String("") != config_.ntp2) {
     configTime(0, 0, config_.ntp1.c_str(), config_.ntp2.c_str());
   } else {
     configTime(0, 0, config_.ntp1.c_str());
@@ -382,7 +400,7 @@ bool NetworkHandler::SetupNtp() {
     return true;  // temp failure. Might come back
   }
 
-  if ("" != config_.timezone) {
+  if (String("") != config_.timezone) {
     setenv("TZ", config_.timezone.c_str(), 1);
     tzset();
   }
@@ -393,12 +411,12 @@ bool NetworkHandler::SetupNtp() {
   time_t boot_time_epoche = epoche - uptime;
   struct tm *ti = localtime(&boot_time_epoche);
   boot_time_ = GetTime(all, ti);
-  Serial.print(epoche);
-  Serial.print(" sec since the Epoche. ");
-  Serial.println(GetTime().c_str());
-  Serial.print(boot_time_epoche);
-  Serial.print(" boot time Epoche. ");
-  Serial.println(GetTime(all, ti).c_str());
+  // Serial.print(epoche);
+  // Serial.print(" sec since the Epoche. ");
+  // Serial.println(GetTime().c_str());
+  // Serial.print(boot_time_epoche);
+  // Serial.print(" boot time Epoche. ");
+  // Serial.println(GetTime(all, ti).c_str());
   return true;
 }
 
@@ -440,29 +458,84 @@ void NetworkHandler::OnEthEvent(WiFiEvent_t event) {
 }
 
 void NetworkHandler::SetupWebServer() {
-  web_server_.on("/", HTTP_GET, OnIndexGet);
-  web_server_.on("/", HTTP_POST, OnIndexPost);
-  web_server_.on("/index.html", HTTP_GET, OnIndexGet);
-  web_server_.on("/index.html", HTTP_POST, OnIndexPost);
-
-  web_server_.on("/index.js", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/javascript", kIndexJsFile);
+  web_server_.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!request->authenticate(config_.web_user.c_str(),
+                               config_.web_password.c_str()))
+      return request->requestAuthentication();
+    request->send(SD, "/www/index.html", "text/html", false,
+                  NetworkHandler::HTMLProcessor);
+  });
+  web_server_.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (!request->authenticate(config_.web_user.c_str(),
+                               config_.web_password.c_str()))
+      return request->requestAuthentication();
+    if (SD.exists("/www/index.html")) {
+      File file = SD.open("/www/index.html");
+      if (file) {
+        String content = file.readString();
+        file.close();
+        String devices = "";
+        for (const WolDevice &wol_device : wol_devices_) {
+          devices += "        <label class='toggle'>\n";
+          devices += "          <span class='text'>";
+          devices += wol_device.name.c_str();
+          devices += " (";
+          devices += wol_device.mac.c_str();
+          devices += ")</span>\n";
+          devices += "          <input type='checkbox' id='";
+          devices += wol_device.mac.c_str();
+          devices += "' name='";
+          devices += wol_device.mac.c_str();
+          if (request->hasParam(wol_device.mac.c_str(), true) &&
+              String("on") ==
+                  request->getParam(wol_device.mac.c_str(), true)->value()) {
+            if (WakeOnLanGenerator::isValidMac(wol_device.mac.c_str())) {
+              SendWol(wol_device);
+            }
+            devices += "' checked />\n";
+          } else {
+            devices += "' />\n";
+          }
+          devices += "          <span class='value'></span>\n";
+          devices += "        </label>\n";
+          devices += "        <br>\n";
+        }
+        content.replace("%DEVICES%", devices);
+        content.replace("%MESSAGE_TYPE%", "success");
+        content.replace("%MESSAGE%", "WOL packets sent");
+        request->send(200, "text/html", content);
+        return;
+      }
+    }
+    request->send(404);
   });
 
   web_server_.on("/main.css", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/css", kCssFile);
+    if (!request->authenticate(config_.web_user.c_str(),
+                               config_.web_password.c_str()))
+      return request->requestAuthentication();
+    request->send(SD, "/www/main.css", "text/css");
+  });
+
+  web_server_.on("/wol.png", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!request->authenticate(config_.web_user.c_str(),
+                               config_.web_password.c_str()))
+      return request->requestAuthentication();
+    request->send(SD, "/www/wol.png", "image/png");
   });
 
   web_server_.onNotFound([](AsyncWebServerRequest *request) {
-    request->send(404, "text/html", kNotFoundHtmlFile);
+    if (!request->authenticate(config_.web_user.c_str(),
+                               config_.web_password.c_str()))
+      return request->requestAuthentication();
+    request->send(404);
   });
-
   web_server_.begin();
 }
 
 void NetworkHandler::SetupOta() {
   ArduinoOTA.setHostname(config_.hostname.c_str());
-  ArduinoOTA.setPassword(config_.ota_password.c_str());
+  ArduinoOTA.setPasswordHash(config_.ota_password.c_str());
   ArduinoOTA.onStart([]() { Serial.println("Start updating firmware."); });
   ArduinoOTA.onProgress([](uint progress, uint total) {
     //    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
@@ -487,7 +560,7 @@ void NetworkHandler::SetupOta() {
   });
 
   ArduinoOTA.begin();
-  MDNS.addService("http", "tcp", 80);
+  MDNS.addService("http", "tcp", WEB_SERVER_PORT);
 }
 
 std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
@@ -538,144 +611,26 @@ std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
   return uptime_str;
 }
 
-void NetworkHandler::OnIndexGet(AsyncWebServerRequest *request) {
-  std::string response = PrepareIndexResponse("", target_broadcast_.toString());
-  request->send(200, "text/html", response.c_str());
-}
-
-void NetworkHandler::OnIndexPost(AsyncWebServerRequest *request) {
-  if (request->hasParam("device", true) && request->hasParam("target", true)) {
-    String device = request->getParam("device", true)->value();
-    String target = request->getParam("target", true)->value();
-
-    if (device == "Other") {
-      if (request->hasParam("custom_device", true)) {
-        device = request->getParam("custom_device", true)->value();
-      } else {
-        device = "";
-      }
+String NetworkHandler::HTMLProcessor(const String &var) {
+  if (var == "DEVICES") {
+    String devices = "";
+    for (const WolDevice &wol_device : wol_devices_) {
+      devices += "        <label class='toggle'>\n";
+      devices += "          <span class='text'>";
+      devices += wol_device.name.c_str();
+      devices += " (";
+      devices += wol_device.mac.c_str();
+      devices += ")</span>\n";
+      devices += "          <input type='checkbox' id='";
+      devices += wol_device.mac.c_str();
+      devices += "' name='";
+      devices += wol_device.mac.c_str();
+      devices += "' checked />\n";
+      devices += "          <span class='value'></span>\n";
+      devices += "        </label>\n";
+      devices += "        <br>\n";
     }
-
-    if (target == "Other") {
-      if (request->hasParam("custom_target", true)) {
-        target = request->getParam("custom_target", true)->value();
-      } else {
-        target = "";
-      }
-    }
-
-    IPAddress originalBroadcastTarget = target_broadcast_;
-
-    if (!WakeOnLanGenerator::isValidMac(device.c_str())) {
-      std::string message = "error\">Received invalid device mac address \"";
-      message += device.c_str();
-      message += "\".";
-
-      std::string response = PrepareIndexResponse(device, target);
-      response = std::regex_replace(
-          response, std::regex("\\$message_type\" hidden>\\$message"),
-          message.c_str());
-      request->send(400, "text/html", response.c_str());
-    } else if (!target_broadcast_.fromString(target)) {
-      target_broadcast_ = originalBroadcastTarget;
-      std::string message = "error\">Received invalid target IP address \"";
-      message += target.c_str();
-      message += "\".";
-
-      std::string response = PrepareIndexResponse(device, target);
-      response = std::regex_replace(
-          response, std::regex("\\$message_type\" hidden>\\$message"),
-          message.c_str());
-      request->send(400, "text/html", response.c_str());
-    } else {
-      std::string n;
-      if (std::count(wol_devices_.begin(), wol_devices_.end(),
-                     WolDevice(device, n)) == 0) {
-        wol_devices_.push_back(WolDevice(device, n));
-      }
-
-      Serial.print("Waking up device ");
-      Serial.print(device);
-      Serial.println('.');
-
-      AsyncUDPMessage wakePacket =
-          WakeOnLanGenerator::generateWoLPacket(device.c_str());
-      udp_.sendTo(wakePacket, target_broadcast_, kWolTargetPort);
-
-      std::string message = "success\">Woke up device ";
-      message += device.c_str();
-      message += '.';
-
-      std::string response = PrepareIndexResponse(device, target);
-      response = std::regex_replace(
-          response, std::regex("\\$message_type\" hidden>\\$message"),
-          message.c_str());
-      request->send(200, "text/html", response.c_str());
-    }
-  } else {
-    OnIndexGet(request);
+    return devices;
   }
-}
-
-std::string NetworkHandler::PrepareIndexResponse(const String device,
-                                                 const String target) {
-  std::string response = kIndexHtmlFile;
-
-  std::string devices = "\n";
-  for (const WolDevice &wol_device : wol_devices_) {
-    devices += "<option value=\"";
-    devices += wol_device.mac;
-    devices += "\">";
-    devices += wol_device.mac;
-    devices += " ";
-    devices += wol_device.name;
-    devices += "</option>\n";
-  }
-  response =
-      std::regex_replace(response, std::regex("\\$devices"), devices.c_str());
-
-  std::vector<std::string> targetIPs;
-  targetIPs.reserve(4);
-  if (target.length() > 6) {
-    targetIPs.push_back(std::string(target.c_str()));
-  }
-  std::string ip(target_broadcast_.toString().c_str());
-  if (std::count(targetIPs.begin(), targetIPs.end(), ip) == 0) {
-    targetIPs.push_back(ip);
-  }
-  if (kDefaultBroadcastAddress == IPAddress((uint32_t)0)) {
-    IPAddress localBroadcast = ETH.broadcastIP();
-    ip = std::string(localBroadcast.toString().c_str());
-    if (std::count(targetIPs.begin(), targetIPs.end(), ip) == 0) {
-      targetIPs.push_back(ip);
-    }
-  } else {
-    ip = std::string(kDefaultBroadcastAddress.toString().c_str());
-    if (std::count(targetIPs.begin(), targetIPs.end(), ip) == 0) {
-      targetIPs.push_back(ip);
-    }
-  }
-  IPAddress globalBroadcast(255, 255, 255, 255);
-  ip = std::string(globalBroadcast.toString().c_str());
-  if (std::count(targetIPs.begin(), targetIPs.end(), ip) == 0) {
-    targetIPs.push_back(ip);
-  }
-
-  std::string targets = "\n";
-  for (const std::string &target : targetIPs) {
-    targets += "<option value=\"";
-    targets += target;
-    targets += "\">";
-    targets += target;
-    targets += "</option>\n";
-  }
-  response =
-      std::regex_replace(response, std::regex("\\$targets"), targets.c_str());
-
-  response =
-      std::regex_replace(response, std::regex("\\$device"), device.c_str());
-  response =
-      std::regex_replace(response, std::regex("\\$target"), target.c_str());
-
-  return response;
+  return String();
 }

@@ -23,4 +23,4 @@ wol:
   startup: 1
   repeat: 10
   port: 9
-# ota_password: # add your OTA update password
+# ota_password_hash: # add your OTA update password MD5 hash
