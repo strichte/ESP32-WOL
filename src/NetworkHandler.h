@@ -23,7 +23,6 @@
 #define YAML_DISABLE_ARDUINOJSON // disable all ArduinoJson functions
 #include <ArduinoYaml.h>  // Happy with plain YAML for out needs
 #include <ctime>
-#include <string>
 
 #if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
 #include <ETHClass2.h>  //Is to use the modified ETHClass
@@ -63,11 +62,10 @@ struct NetworkConfig {
 
 // Device information
 struct WolDevice {
-  std::string mac;
-  std::string name;
+  String mac;
+  String name;
   WolDevice(){};
-  WolDevice(const std::string &m, const std::string &n) : mac(m), name(n) {}
-  WolDevice(const String &m, const std::string &n) : mac(m.c_str()), name(n) {}
+  WolDevice(const String &m, const String &n) : mac(m), name(n) {}
 };
 
 bool operator<(const WolDevice &left, const WolDevice &right);
@@ -80,10 +78,10 @@ class NetworkHandler {
   static bool Setup(const char *config_file);
   static NetworkConfig &Config() { return config_; };
   static void SetNtpStatus(const bool &n) { ntp_connected_ = n; };
-  static std::string GetTime(DateTimeType t = all, tm *ti = nullptr);
-  static std::string GetUptime(DateTimeType t = all);
+  static String GetTime(DateTimeType t = all, tm *ti = nullptr);
+  static String GetUptime(DateTimeType t = all);
   static void SetNextWolTime(const time_t &e) {NetworkHandler::next_wol_time_ = e;}
-  static std::string GetNextWolTime(DateTimeType t = all);
+  static String GetNextWolTime(DateTimeType t = all);
   static void SendWol();
   static void SendWol(const WolDevice &wol_device);
   static const std::vector<WolDevice>& GetWolDevices() { return wol_devices_; }
@@ -101,7 +99,7 @@ class NetworkHandler {
   static AsyncWebServer web_server_;
   static std::vector<WolDevice> wol_devices_;
   static IPAddress target_broadcast_;
-  static std::string boot_time_;
+  static String boot_time_;
   static AsyncUDP udp_;
   static NetworkConfig config_;
   
@@ -110,21 +108,8 @@ class NetworkHandler {
   static void OnEthEvent(WiFiEvent_t event);
   static void SetupWebServer();
   static void SetupOta();
-  static std::string GetRelativeUptime(const DateTimeType &type = all);
+  static String GetRelativeUptime(const DateTimeType &type = all);
   static String HTMLProcessor(const String &var);
-  //static void OnIndexGet(AsyncWebServerRequest *request);
-  //static void OnIndexPost(AsyncWebServerRequest *request);
-
-  /**
-   * Replaces some variables in indexHtml to prepare it for being sent to the
-   * client.
-   *
-   * @param device	The currently selected device MAC address.
-   * @param target	The currently selected target broadcast ip address.
-   * @return	The prepared index.html string.
-   */
-  //static std::string PrepareIndexResponse(const String device,
-  //                                        const String target);
 };
 
 #endif /* SRC_NETWORKHANDLER_H_ */

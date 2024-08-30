@@ -32,7 +32,7 @@ AsyncWebServer NetworkHandler::web_server_(WEB_SERVER_PORT);
 std::vector<WolDevice> NetworkHandler::wol_devices_;
 IPAddress NetworkHandler::target_broadcast_ = kDefaultBroadcastAddress;
 AsyncUDP NetworkHandler::udp_;
-std::string NetworkHandler::boot_time_;
+String NetworkHandler::boot_time_;
 time_t NetworkHandler::next_wol_time_;
 bool NetworkHandler::first_wol_sent_ = false;
 NetworkConfig NetworkHandler::config_;
@@ -179,8 +179,6 @@ bool NetworkHandler::Setup(const char *config_file) {
     if (!(s >> std::boolalpha >> config_.web_enabled)) {
       config_.web_enabled = false;
     }
-    Serial.print("Conf web:enabled 2=");
-    Serial.println(config_.web_enabled);
     if (config_.web_enabled) {
       if ("web:user" != yaml_config.gettext("web:user")) {
         config_.web_user = yaml_config.gettext("web:user");
@@ -207,17 +205,14 @@ bool NetworkHandler::Setup(const char *config_file) {
   bool last_element = false;
   int i = 0;
   while (!last_element) {
-    std::ostringstream yaml_path_name;
-    yaml_path_name << "devices:" << i << ":name";
+    String yaml_path_name("devices:" + String(i) + ":name");
     WolDevice device;
-    device.name = yaml_config.gettext(yaml_path_name.str().c_str());
-    std::ostringstream yaml_path_mac;
-    yaml_path_mac << "devices:" << i++ << ":mac";
-    device.mac = yaml_config.gettext(yaml_path_mac.str().c_str());
-    if (device.name.empty() || device.mac.empty() ||
-        device.name ==
-            yaml_path_name.str()  // gettext() returns path if not found
-        || device.mac == yaml_path_mac.str()) {
+    device.name = yaml_config.gettext(yaml_path_name.c_str());
+    String yaml_path_mac("devices:" + String(i++) + ":mac");
+    device.mac = yaml_config.gettext(yaml_path_mac.c_str());
+    if (device.name.isEmpty() || device.mac.isEmpty() ||
+        device.name == yaml_path_name  // gettext() returns path if not found
+        || device.mac == yaml_path_mac) {
       last_element = true;
     } else {
       wol_success = true;
@@ -237,12 +232,13 @@ bool NetworkHandler::Setup(const char *config_file) {
   if (!SetupEth()) {
     return false;
   }
-  SetupWebServer();
+
+  if(config_.web_enabled) SetupWebServer();
   SetupOta();
   return true;
 }
 
-std::string NetworkHandler::GetTime(DateTimeType t, tm *ti) {
+String NetworkHandler::GetTime(DateTimeType t, tm *ti) {
   char ts[20];
   tm timeinfo;
   if (nullptr == ti) {
@@ -263,24 +259,24 @@ std::string NetworkHandler::GetTime(DateTimeType t, tm *ti) {
       strftime(ts, 20, "%H:%M:%S", ti);
       break;
   }
-  return std::string(ts);
+  return String(ts);
 }
 
-std::string NetworkHandler::GetUptime(DateTimeType type) {
+String NetworkHandler::GetUptime(DateTimeType type) {
   if (boot_time_.length() > 0) {
     switch (type) {
       case all:
         return boot_time_;
       case date_only:
-        return boot_time_.substr(0, 10);
+        return boot_time_.substring(0, 10);
       case time_only:
-        return boot_time_.substr(11);
+        return boot_time_.substring(11);
     }
   }
   return GetRelativeUptime(type);
 }
 
-std::string NetworkHandler::GetNextWolTime(DateTimeType type) {
+String NetworkHandler::GetNextWolTime(DateTimeType type) {
   static int16_t time_left = 0;
   if (next_wol_time_ < 100000) {
     // quick and dirty for detecting NTP not working (yet). Get relative time
@@ -296,20 +292,20 @@ std::string NetworkHandler::GetNextWolTime(DateTimeType type) {
       int minutes = time_left / 60;
       time_left = time_left % 60;
 
-      std::vector<std::string> time_left_tokens;
+      std::vector<String> time_left_tokens;
       time_left_tokens.push_back("in");
       if (days) {
-        time_left_tokens.push_back(std::to_string(days) + "d");
+        time_left_tokens.push_back(String(days) + "d");
       }
       if (hours) {
-        time_left_tokens.push_back(std::to_string(hours) + "h");
+        time_left_tokens.push_back(String(hours) + "h");
       }
       if (minutes) {
-        time_left_tokens.push_back(std::to_string(minutes) + "m");
+        time_left_tokens.push_back(String(minutes) + "m");
       }
-      time_left_tokens.push_back(std::to_string(time_left) + "s");
+      time_left_tokens.push_back(String(time_left) + "s");
 
-      std::string time_left_str("");
+      String time_left_str("");
       switch (type) {
         case date_only:
           time_left_str += time_left_tokens[0];
@@ -325,7 +321,7 @@ std::string NetworkHandler::GetNextWolTime(DateTimeType type) {
           }
           break;
         case all:
-          for (const std::string &token : time_left_tokens) {
+          for (const String &token : time_left_tokens) {
             time_left_str += token + " ";
           }
       }
@@ -341,7 +337,7 @@ std::string NetworkHandler::GetNextWolTime(DateTimeType type) {
 
 void NetworkHandler::SendWol(const WolDevice &device) {
   AsyncUDPMessage wakePacket =
-      WakeOnLanGenerator::generateWoLPacket(device.mac);
+      WakeOnLanGenerator::generateWoLPacket(device.mac.c_str());
   udp_.sendTo(wakePacket, ETH.broadcastIP(), config_.wol_port);
   Serial.print("Sent WOL to ");
   Serial.println(device.mac.c_str());
@@ -352,7 +348,7 @@ void NetworkHandler::SendWol() {
     Serial.print("Sent WOL to: ");
     Serial.println(device.mac.c_str());
     AsyncUDPMessage wakePacket =
-        WakeOnLanGenerator::generateWoLPacket(device.mac);
+        WakeOnLanGenerator::generateWoLPacket(device.mac.c_str());
     udp_.sendTo(wakePacket, ETH.broadcastIP(), config_.wol_port);
     delay(50);
   }
@@ -563,7 +559,7 @@ void NetworkHandler::SetupOta() {
   MDNS.addService("http", "tcp", WEB_SERVER_PORT);
 }
 
-std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
+String NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
   int64_t uptime = esp_timer_get_time() / 1000000;
 
   int16_t days = uptime / (24 * 3600);
@@ -575,20 +571,20 @@ std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
   int minutes = uptime / 60;
   uptime = uptime % 60;
 
-  std::vector<std::string> uptime_tokens;
+  std::vector<String> uptime_tokens;
   if (days) {
-    uptime_tokens.push_back(std::to_string(days) + "d");
+    uptime_tokens.push_back(String(days) + "d");
   }
   if (hours) {
-    uptime_tokens.push_back(std::to_string(hours) + "h");
+    uptime_tokens.push_back(String(hours) + "h");
   }
   if (minutes) {
-    uptime_tokens.push_back(std::to_string(minutes) + "m");
+    uptime_tokens.push_back(String(minutes) + "m");
   }
-  uptime_tokens.push_back(std::to_string(uptime) + "s");
+  uptime_tokens.push_back(String(uptime) + "s");
   uptime_tokens.push_back("ago");
 
-  std::string uptime_str("");
+  String uptime_str("");
   switch (type) {
     case date_only:
       uptime_str += uptime_tokens[0];
@@ -604,7 +600,7 @@ std::string NetworkHandler::GetRelativeUptime(const DateTimeType &type) {
       }
       break;
     case all:
-      for (const std::string &token : uptime_tokens) {
+      for (const String &token : uptime_tokens) {
         uptime_str += token + " ";
       }
   }

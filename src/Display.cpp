@@ -178,8 +178,8 @@ void I2CDisplay::DrawWolDevice(const uint &start, const uint &end) {
   display_.clearBuffer();
   DrawHeader();
   for (uint i = start, pos = 0; i < end; i++, pos++) {
-    display_.drawStr(0, 24 + 16 * pos, std::string(NetworkHandler::GetWolDevices()[i].name + ":").c_str());
-    display_.drawStr(0, 32 + 16 * pos, std::string("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
+    display_.drawStr(0, 24 + 16 * pos, (NetworkHandler::GetWolDevices()[i].name + ":").c_str());
+    display_.drawStr(0, 32 + 16 * pos, ("   " + NetworkHandler::GetWolDevices()[i].mac).c_str());
   }
   display_.sendBuffer();
   current_page_ = devices;
